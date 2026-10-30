@@ -10,6 +10,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "HAL/PlatformTime.h"
@@ -19,7 +20,7 @@ namespace
 constexpr auto WorldFlags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
 struct FBallTestWorld
 {
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	UWorld *World = UWorld::CreateWorld(EWorldType::Game, false);
 	~FBallTestWorld()
 	{
 		if (World)
@@ -27,10 +28,10 @@ struct FBallTestWorld
 			World->DestroyWorld(false);
 		}
 	}
-	UBoxComponent* Box(const TCHAR* Name, FVector Center, FVector Extent)
+	UBoxComponent *Box(const TCHAR *Name, FVector Center, FVector Extent)
 	{
-		auto* Actor = World->SpawnActor<AActor>();
-		auto* C = NewObject<UBoxComponent>(Actor, FName(Name));
+		auto *Actor = World->SpawnActor<AActor>();
+		auto *C = NewObject<UBoxComponent>(Actor, FName(Name));
 		Actor->SetRootComponent(C);
 		Actor->AddInstanceComponent(C);
 		C->SetMobility(EComponentMobility::Static);
@@ -50,15 +51,84 @@ FBallPhysicsConfig WorldConfig()
 	C.Restitution = 1;
 	return C;
 }
-bool WorldStep(FBallState& S, const FBallPhysicsConfig& C, const IBallCollisionWorld& W, FBallStepOutput& O)
+bool WorldStep(FBallState &S, const FBallPhysicsConfig &C, const IBallCollisionWorld &W, FBallStepOutput &O)
 {
 	FBallSimulator Sim;
 	return Sim.SimulateStep(S, BallTests::Inputs(S), C, W, O) == EBallStepResult::Success;
 }
 } // namespace
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallRealWorldTick, "FourSquareVR.Ball.World.ActualTickAndStartupBoundary", WorldFlags)
+bool FBallRealWorldTick::RunTest(const FString &)
+{
+	TGuardValue<uint64> RestoreFrameCounter(GFrameCounter, GFrameCounter);
+	FBallTestWorld T;
+	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(T.World);
+	T.World->SpawnActor<ABallTestCourt>();
+	auto *Ball = T.World->SpawnActor<AHandballBall>(FVector(0, 0, 100), FRotator::ZeroRotator);
+	T.World->InitializeActorsForPlay(FURL());
+	Ball->DispatchBeginPlay();
+	auto *System = Ball->GetSimulationCoordinator();
+	if (!TestNotNull(TEXT("Coordinator"), System))
+	{
+		GEngine->DestroyWorldContext(T.World);
+		return false;
+	}
+	System->TickSimulation(.2); // Under the hard backlog limit, but larger than one catch-up budget.
+	TestTrue(TEXT("Startup overrun declares a pause"), System->IsPaused());
+	TestEqual(TEXT("No fabricated startup steps"), System->GetSimulationFrame(), uint64(0));
+	for (int32 I = 0; I < 3; ++I)
+	{
+		System->TickSimulation(1.0 / 120);
+	}
+	TestFalse(TEXT("Stable startup establishes a new timebase"), System->IsPaused());
+	TestEqual(TEXT("Startup recovery still has complete initial state"), System->GetSimulationFrame(), uint64(0));
+	bool bBounced = false;
+	for (int32 I = 0; I < 240; ++I)
+	{
+		++GFrameCounter;
+		T.World->Tick(LEVELTICK_All, 1.0f / 120);
+		bBounced |= Ball->GetBallLinearVelocity().Z > 100;
+	}
+	TestEqual(TEXT("Real registered tick advances 240 frames"), System->GetSimulationFrame(), uint64(240));
+	TestTrue(TEXT("Real world gravity and bounce"), bBounced && Ball->GetBallPosition().Z >= 3);
+	TestTrue(TEXT("Visual projection remains synchronized"),
+			 Ball->GetActorLocation().Equals(Ball->GetBallPosition(), 1.e-8));
+	TestEqual(TEXT("Real tick writes bounded history"), Ball->GetHistory().Num(), 240);
+	GEngine->DestroyWorldContext(T.World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallDropToRest, "FourSquareVR.Ball.World.FallingBallEventuallyRests", WorldFlags)
+bool FBallDropToRest::RunTest(const FString &)
+{
+	FBallTestWorld T;
+	T.World->SpawnActor<ABallTestCourt>();
+	FUnrealBallCollisionWorld W;
+	W.Initialize(T.World, 1);
+	FBallPhysicsConfig Config;
+	auto State = BallTests::State();
+	State.Position.Z = 520;
+	FBallSimulator Simulator;
+	FBallStepOutput Output;
+	for (int32 I = 0; I < 7200; ++I)
+	{
+		if (Simulator.SimulateStep(State, BallTests::Inputs(State), Config, W, Output) != EBallStepResult::Success)
+		{
+			AddError(FString::Printf(TEXT("Drop failed at %d, status %d"), I, static_cast<int32>(Output.Result)));
+			return false;
+		}
+	}
+	TestTrue(TEXT("Natural drop settles, not only an initially supported fixture"),
+			 State.Activity == EBallActivityState::Resting);
+	TestTrue(TEXT("Stable floor height"), FMath::IsNearlyEqual(State.Position.Z, 3.02, .021));
+	AddInfo(FString::Printf(TEXT("Drop result Z=%.9f Vz=%.9f Support=%d"), State.Position.Z, State.LinearVelocity.Z,
+							State.bHasSupport));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallEngineThinWall, "FourSquareVR.Ball.World.ThinWallAndNormals", WorldFlags)
-bool FBallEngineThinWall::RunTest(const FString&)
+bool FBallEngineThinWall::RunTest(const FString &)
 {
 	FBallTestWorld T;
 	T.Box(TEXT("ThinWall"), FVector(.05, 0, 0), FVector(.05, 100, 100));
@@ -86,7 +156,7 @@ bool FBallEngineThinWall::RunTest(const FString&)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallEngineCorner, "FourSquareVR.Ball.World.MultiComponentCorner", WorldFlags)
-bool FBallEngineCorner::RunTest(const FString&)
+bool FBallEngineCorner::RunTest(const FString &)
 {
 	FBallTestWorld T;
 	T.Box(TEXT("Floor"), FVector(0, 0, -10), FVector(100, 100, 10));
@@ -106,7 +176,7 @@ bool FBallEngineCorner::RunTest(const FString&)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallEngineRest, "FourSquareVR.Ball.World.PenetrationAndExtendedRest", WorldFlags)
-bool FBallEngineRest::RunTest(const FString&)
+bool FBallEngineRest::RunTest(const FString &)
 {
 	FBallTestWorld T;
 	T.Box(TEXT("Floor"), FVector(0, 0, -10), FVector(100, 100, 10));
@@ -140,11 +210,11 @@ bool FBallEngineRest::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallEngineEpoch, "FourSquareVR.Ball.World.FiltersCapacityAndGeometryEpoch",
 								 WorldFlags)
-bool FBallEngineEpoch::RunTest(const FString&)
+bool FBallEngineEpoch::RunTest(const FString &)
 {
 	FBallTestWorld T;
-	auto* Box = T.Box(TEXT("Floor"), FVector(0, 0, -10), FVector(100, 100, 10));
-	auto* Ignored = T.Box(TEXT("Ignored"), FVector(0, 0, -20), FVector(100, 100, 10));
+	auto *Box = T.Box(TEXT("Floor"), FVector(0, 0, -10), FVector(100, 100, 10));
+	auto *Ignored = T.Box(TEXT("Ignored"), FVector(0, 0, -20), FVector(100, 100, 10));
 	Ignored->ComponentTags.Add(TEXT("BallIgnore"));
 	FUnrealBallCollisionWorld W;
 	TestTrue(TEXT("Capture static epoch"), W.Initialize(T.World, 1));
@@ -185,12 +255,12 @@ bool FBallEngineEpoch::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallActorIntegration, "FourSquareVR.Ball.World.ActorLaunchResetAndSharedClock",
 								 WorldFlags)
-bool FBallActorIntegration::RunTest(const FString&)
+bool FBallActorIntegration::RunTest(const FString &)
 {
 	FBallTestWorld T;
 	T.World->SpawnActor<ABallTestCourt>();
-	auto* Ball = T.World->SpawnActor<AHandballBall>(FVector(0, 0, 100), FRotator::ZeroRotator);
-	auto* System = T.World->GetSubsystem<UBallSimulationSubsystem>();
+	auto *Ball = T.World->SpawnActor<AHandballBall>(FVector(0, 0, 100), FRotator::ZeroRotator);
+	auto *System = T.World->GetSubsystem<UBallSimulationSubsystem>();
 	if (!TestNotNull(TEXT("World subsystem exists"), System))
 	{
 		return false;
@@ -230,7 +300,7 @@ bool FBallActorIntegration::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallEnginePerformance, "FourSquareVR.Ball.World.BoundedCollisionReplayPerformance",
 								 WorldFlags)
-bool FBallEnginePerformance::RunTest(const FString&)
+bool FBallEnginePerformance::RunTest(const FString &)
 {
 	FBallTestWorld T;
 	T.World->SpawnActor<ABallTestCourt>();
@@ -290,7 +360,7 @@ bool FBallEnginePerformance::RunTest(const FString&)
 		TestEqual(TEXT("World cache storage bounded"), W.GetAllocatedBytes(), Bytes);
 		FBallHistoryFrame Start;
 		H.CopyFrame(480, S.Identity, Start);
-		const auto& Stats = W.GetStatistics();
+		const auto &Stats = W.GetStatistics();
 		AddInfo(FString::Printf(
 			TEXT("PC_UNREAL_STATIC_COLLISION Iterations=256 FramesPerReplay=30 Speed=%.2fcm/s Components=%d "
 				 "WorldCacheBytes=%llu HistoryBytes=%llu StepMedianUs=%.3f StepP95Us=%.3f MedianReplayUs=%.3f "
@@ -308,12 +378,12 @@ bool FBallEnginePerformance::RunTest(const FString&)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallCompoundCorner, "FourSquareVR.Ball.World.CompoundShapeCorner", WorldFlags)
-bool FBallCompoundCorner::RunTest(const FString&)
+bool FBallCompoundCorner::RunTest(const FString &)
 {
 	FBallTestWorld T;
-	auto* Mesh = NewObject<UStaticMesh>(GetTransientPackage());
+	auto *Mesh = NewObject<UStaticMesh>(GetTransientPackage());
 	Mesh->CreateBodySetup();
-	auto* Setup = Mesh->GetBodySetup();
+	auto *Setup = Mesh->GetBodySetup();
 	Setup->CollisionTraceFlag = CTF_UseSimpleAsComplex;
 	FKBoxElem Floor(200, 200, 20);
 	Floor.Center = FVector(0, 0, -10);
@@ -323,8 +393,8 @@ bool FBallCompoundCorner::RunTest(const FString&)
 	Setup->AggGeom.BoxElems.Add(Wall);
 	Setup->CreatePhysicsMeshes();
 	Mesh->SetExtendedBounds(FBoxSphereBounds(FBox(FVector(-20, -100, -20), FVector(100, 100, 200))));
-	auto* Actor = T.World->SpawnActor<AActor>();
-	auto* Component = NewObject<UStaticMeshComponent>(Actor);
+	auto *Actor = T.World->SpawnActor<AActor>();
+	auto *Component = NewObject<UStaticMeshComponent>(Actor);
 	Actor->SetRootComponent(Component);
 	Actor->AddInstanceComponent(Component);
 	Component->SetMobility(EComponentMobility::Static);

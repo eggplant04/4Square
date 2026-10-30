@@ -9,7 +9,7 @@
 
 namespace
 {
-FString CanonicalKey(UPrimitiveComponent* Component)
+FString CanonicalKey(UPrimitiveComponent *Component)
 {
 	FString Key = Component->GetPathName();
 	int32 Start;
@@ -31,7 +31,7 @@ FString CanonicalKey(UPrimitiveComponent* Component)
 	}
 	return Key;
 }
-uint64 StableId(const FString& Key)
+uint64 StableId(const FString &Key)
 {
 	FTCHARToUTF8 UTF8(*Key);
 	uint64 Hash = 14695981039346656037ull;
@@ -39,9 +39,10 @@ uint64 StableId(const FString& Key)
 	{
 		Hash = (Hash ^ static_cast<uint8>(UTF8.Get()[I])) * 1099511628211ull;
 	}
+	Hash &= 0x3fffffffffffffffull; // Upper namespaces are reserved for recorded hands/kinematics.
 	return Hash == 0 ? 1 : Hash;
 }
-uint32 Feature(const FVector& N, int32 Face)
+uint32 Feature(const FVector &N, int32 Face)
 {
 	if (Face >= 0)
 	{
@@ -56,7 +57,7 @@ uint32 Feature(const FVector& N, int32 Face)
 	}
 	return Hash;
 }
-FBallSurfaceMaterial ReadMaterial(UPhysicalMaterial* Material)
+FBallSurfaceMaterial ReadMaterial(UPhysicalMaterial *Material)
 {
 	FBallSurfaceMaterial Result;
 	if (Material)
@@ -82,7 +83,7 @@ FUnrealBallCollisionWorld::~FUnrealBallCollisionWorld()
 
 void FUnrealBallCollisionWorld::Detach()
 {
-	if (auto* World = BoundWorld.Get())
+	if (auto *World = BoundWorld.Get())
 	{
 		World->RemoveOnActorSpawnedHandler(SpawnHandle);
 	}
@@ -91,14 +92,14 @@ void FUnrealBallCollisionWorld::Detach()
 	BoundWorld.Reset();
 }
 
-bool FUnrealBallCollisionWorld::Eligible(UPrimitiveComponent* C)
+bool FUnrealBallCollisionWorld::Eligible(UPrimitiveComponent *C)
 {
 	return IsValid(C) && C->IsRegistered() && C->Mobility == EComponentMobility::Static &&
 		   C->IsQueryCollisionEnabled() && !C->IsSimulatingPhysics() && !C->ComponentHasTag(TEXT("BallIgnore")) &&
 		   C->GetBodySetup();
 }
 
-bool FUnrealBallCollisionWorld::Initialize(UWorld* World, uint32 InRevision)
+bool FUnrealBallCollisionWorld::Initialize(UWorld *World, uint32 InRevision)
 {
 	Detach();
 	Records.Reset();
@@ -114,8 +115,8 @@ bool FUnrealBallCollisionWorld::Initialize(UWorld* World, uint32 InRevision)
 	BoundWorld = World;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
-		TInlineComponentArray<UPrimitiveComponent*> Components(*It);
-		for (UPrimitiveComponent* C : Components)
+		TInlineComponentArray<UPrimitiveComponent *> Components(*It);
+		for (UPrimitiveComponent *C : Components)
 		{
 			if (!Eligible(C))
 			{
@@ -137,7 +138,7 @@ bool FUnrealBallCollisionWorld::Initialize(UWorld* World, uint32 InRevision)
 			R.Profile = C->GetCollisionProfileName();
 			R.ObjectType = C->GetCollisionObjectType();
 			R.OwnerComponentCount = C->GetOwner()->GetComponents().Num();
-			if (const FBodyInstance* Body = C->GetBodyInstance())
+			if (const FBodyInstance *Body = C->GetBodyInstance())
 			{
 				R.PhysicalMaterial = Body->GetSimplePhysicalMaterial();
 			}
@@ -147,7 +148,7 @@ bool FUnrealBallCollisionWorld::Initialize(UWorld* World, uint32 InRevision)
 			Records.Add(MoveTemp(R));
 		}
 	}
-	Records.Sort([](const FStaticRecord& A, const FStaticRecord& B) { return A.Key < B.Key; });
+	Records.Sort([](const FStaticRecord &A, const FStaticRecord &B) { return A.Key < B.Key; });
 	for (int32 I = 0; I < Records.Num(); ++I)
 		for (int32 J = 0; J < I; ++J)
 		{
@@ -168,7 +169,7 @@ bool FUnrealBallCollisionWorld::Initialize(UWorld* World, uint32 InRevision)
 	return true;
 }
 
-void FUnrealBallCollisionWorld::OnSpawn(AActor* Actor)
+void FUnrealBallCollisionWorld::OnSpawn(AActor *Actor)
 {
 	if (PendingActors.Num() == 64)
 	{
@@ -179,7 +180,7 @@ void FUnrealBallCollisionWorld::OnSpawn(AActor* Actor)
 		PendingActors.Add(Actor);
 	}
 }
-void FUnrealBallCollisionWorld::OnLevel(ULevel* Level, UWorld* World)
+void FUnrealBallCollisionWorld::OnLevel(ULevel *Level, UWorld *World)
 {
 	if (World == BoundWorld.Get())
 	{
@@ -193,12 +194,12 @@ bool FUnrealBallCollisionWorld::Unchanged() const
 	{
 		return false;
 	}
-	for (const auto& Pending : PendingActors)
+	for (const auto &Pending : PendingActors)
 	{
-		if (AActor* Actor = Pending.Get())
+		if (AActor *Actor = Pending.Get())
 		{
-			TInlineComponentArray<UPrimitiveComponent*> Components(Actor);
-			for (auto* C : Components)
+			TInlineComponentArray<UPrimitiveComponent *> Components(Actor);
+			for (auto *C : Components)
 			{
 				if (Eligible(C))
 				{
@@ -209,9 +210,9 @@ bool FUnrealBallCollisionWorld::Unchanged() const
 		}
 	}
 	PendingActors.Reset();
-	for (const auto& R : Records)
+	for (const auto &R : Records)
 	{
-		auto* C = R.Component.Get();
+		auto *C = R.Component.Get();
 		const FBallSurfaceMaterial Material = ReadMaterial(R.PhysicalMaterial.Get());
 		if (!Eligible(C) || C->GetBodySetup() != R.Body.Get() || C->GetBodySetup()->BodySetupGuid != R.GeometryGuid ||
 			!C->GetComponentTransform().Equals(R.Transform, 1.e-6) || !C->Bounds.GetBox().Equals(R.Bounds, 1.e-6) ||
@@ -236,14 +237,14 @@ SIZE_T FUnrealBallCollisionWorld::GetAllocatedBytes() const
 {
 	SIZE_T Bytes = sizeof(*this) + Records.GetAllocatedSize() + Lookup.GetAllocatedSize() +
 				   PendingActors.GetAllocatedSize() + ScratchHits.GetAllocatedSize();
-	for (const auto& R : Records)
+	for (const auto &R : Records)
 	{
 		Bytes += R.Key.GetAllocatedSize();
 	}
 	return Bytes;
 }
 
-EBallQueryResult FUnrealBallCollisionWorld::SweepSphere(const FBallCollisionQuery& Query, FBallContact& Output) const
+EBallQueryResult FUnrealBallCollisionWorld::SweepSphere(const FBallCollisionQuery &Query, FBallContact &Output) const
 {
 	FBallContactBatch Batch;
 	const auto Result = GatherContacts(Query, Batch);
@@ -254,8 +255,8 @@ EBallQueryResult FUnrealBallCollisionWorld::SweepSphere(const FBallCollisionQuer
 	return Result;
 }
 
-EBallQueryResult FUnrealBallCollisionWorld::GatherContacts(const FBallCollisionQuery& Q,
-														   FBallContactBatch& Output) const
+EBallQueryResult FUnrealBallCollisionWorld::GatherContacts(const FBallCollisionQuery &Q,
+														   FBallContactBatch &Output) const
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(Handball_StaticWorldQuery);
 	Output.Count = 0;
@@ -271,7 +272,7 @@ EBallQueryResult FUnrealBallCollisionWorld::GatherContacts(const FBallCollisionQ
 	Bounds += Q.End;
 	Bounds = Bounds.ExpandBy(Q.Radius + Q.ProbeDistance + Q.SpatialTolerance);
 	uint32 Candidates = 0;
-	for (const auto& R : Records)
+	for (const auto &R : Records)
 	{
 		if (Bounds.Intersect(R.Bounds) && R.Responses.GetResponse(Q.Channel) == ECR_Block &&
 			(Q.RequiredProfile.IsNone() || R.Profile == Q.RequiredProfile))
@@ -302,10 +303,10 @@ EBallQueryResult FUnrealBallCollisionWorld::GatherContacts(const FBallCollisionQ
 	}
 	double Earliest = 2;
 	// Find the true earliest TOI before applying the eight-normal cap.
-	for (const auto& Hit : ScratchHits)
+	for (const auto &Hit : ScratchHits)
 	{
-		auto* C = Hit.GetComponent();
-		const int32* Index = Lookup.Find(C);
+		auto *C = Hit.GetComponent();
+		const int32 *Index = Lookup.Find(C);
 		if (!Index)
 		{
 			if (Eligible(C))
@@ -315,7 +316,7 @@ EBallQueryResult FUnrealBallCollisionWorld::GatherContacts(const FBallCollisionQ
 			}
 			continue;
 		}
-		const auto& R = Records[*Index];
+		const auto &R = Records[*Index];
 		if (R.Responses.GetResponse(Q.Channel) != ECR_Block ||
 			(!Q.RequiredProfile.IsNone() && R.Profile != Q.RequiredProfile))
 		{
@@ -329,15 +330,15 @@ EBallQueryResult FUnrealBallCollisionWorld::GatherContacts(const FBallCollisionQ
 		}
 		Earliest = FMath::Min(Earliest, static_cast<double>(Hit.Time));
 	}
-	for (const auto& Hit : ScratchHits)
+	for (const auto &Hit : ScratchHits)
 	{
-		auto* C = Hit.GetComponent();
-		const int32* Index = Lookup.Find(C);
+		auto *C = Hit.GetComponent();
+		const int32 *Index = Lookup.Find(C);
 		if (!Index)
 		{
 			continue;
 		}
-		const auto& R = Records[*Index];
+		const auto &R = Records[*Index];
 		if (R.Responses.GetResponse(Q.Channel) != ECR_Block ||
 			(!Q.RequiredProfile.IsNone() && R.Profile != Q.RequiredProfile))
 		{

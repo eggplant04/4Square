@@ -2,8 +2,17 @@
 
 #include "CoreMinimal.h"
 
-enum class EBallClockRole : uint8 { Authority, PredictedClient };
-enum class EBallClockStatus : uint8 { Running, AuthorityPaused, NeedsBaseline };
+enum class EBallClockRole : uint8
+{
+	Authority,
+	PredictedClient
+};
+enum class EBallClockStatus : uint8
+{
+	Running,
+	AuthorityPaused,
+	NeedsBaseline
+};
 
 struct FOURSQUAREVR_API FBallClockSettings
 {
@@ -27,8 +36,8 @@ struct FOURSQUAREVR_API FBallClockDiagnostics
 /** Scheduling only. Consume a step only AFTER the corresponding simulator transaction succeeds. */
 class FOURSQUAREVR_API FBallSimulationClock
 {
-public:
-	bool Initialize(const FBallClockSettings& InSettings, EBallClockRole InRole, uint64 Frame = 0, uint32 Timebase = 1);
+  public:
+	bool Initialize(const FBallClockSettings &InSettings, EBallClockRole InRole, uint64 Frame = 0, uint32 Timebase = 1);
 	bool BeginRenderFrame(double ElapsedSeconds);
 	bool HasStepAvailable() const;
 	bool ConsumeCompletedStep();
@@ -37,14 +46,36 @@ public:
 	bool ResumeAuthority(uint32 NewTimebase);
 	/** Recovery does not pretend to have simulated skipped frames. Caller supplies an actual baseline. */
 	bool ApplyClientBaseline(uint64 Frame, uint32 NewTimebase);
-	uint64 GetFrame() const { return CurrentFrame; }
-	uint32 GetTimebase() const { return TimebaseVersion; }
-	double GetFixedDeltaTime() const { return FixedDeltaTime; }
-	double GetAccumulatorSeconds() const { return Accumulator; }
-	EBallClockStatus GetStatus() const { return Status; }
-	const FBallClockDiagnostics& GetDiagnostics() const { return Diagnostics; }
+	uint64 GetFrame() const
+	{
+		return CurrentFrame;
+	}
+	uint32 GetTimebase() const
+	{
+		return TimebaseVersion;
+	}
+	double GetFixedDeltaTime() const
+	{
+		return FixedDeltaTime;
+	}
+	int32 GetMaximumCatchUpSteps() const
+	{
+		return Settings.MaximumCatchUpSteps;
+	}
+	double GetAccumulatorSeconds() const
+	{
+		return Accumulator;
+	}
+	EBallClockStatus GetStatus() const
+	{
+		return Status;
+	}
+	const FBallClockDiagnostics &GetDiagnostics() const
+	{
+		return Diagnostics;
+	}
 
-private:
+  private:
 	FBallClockSettings Settings;
 	FBallClockDiagnostics Diagnostics;
 	EBallClockRole Role = EBallClockRole::Authority;

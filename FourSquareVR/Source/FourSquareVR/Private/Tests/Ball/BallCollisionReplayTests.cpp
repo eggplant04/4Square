@@ -17,7 +17,7 @@ FBallPhysicsConfig CollisionConfig()
 	C.Restitution = 1;
 	return C;
 }
-void Court(FRecordedBallCollisionWorld& W)
+void Court(FRecordedBallCollisionWorld &W)
 {
 	W.AddPlane({1, 1}, FVector(-100, 0, 0), FVector::ForwardVector);
 	W.AddPlane({2, 1}, FVector(100, 0, 0), -FVector::ForwardVector);
@@ -33,7 +33,7 @@ FBallState MovingState()
 	S.LinearVelocity = FVector(12345, 5678, -9876);
 	return S;
 }
-bool SameEvent(const FBallCollisionEvent& A, const FBallCollisionEvent& B)
+bool SameEvent(const FBallCollisionEvent &A, const FBallCollisionEvent &B)
 {
 	return A.Ball == B.Ball && A.Collider == B.Collider && A.FeatureId == B.FeatureId && A.Episode == B.Episode &&
 		   A.Ordinal == B.Ordinal && A.Time.Frame == B.Time.Frame && A.Time.Fraction == B.Time.Fraction &&
@@ -48,7 +48,7 @@ bool SameEvent(const FBallCollisionEvent& A, const FBallCollisionEvent& B)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallCollisionFPS, "FourSquareVR.Ball.Collision.RenderFramerateEquivalence",
 								 ReplayFlags)
-bool FBallCollisionFPS::RunTest(const FString&)
+bool FBallCollisionFPS::RunTest(const FString &)
 {
 	FBallState Reference;
 	for (int32 FPS : {30, 72, 90, 120, 144, 240})
@@ -90,7 +90,7 @@ bool FBallCollisionFPS::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallCollisionReplay,
 								 "FourSquareVR.Ball.Collision.CheckpointReplayAndEventEquivalence", ReplayFlags)
-bool FBallCollisionReplay::RunTest(const FString&)
+bool FBallCollisionReplay::RunTest(const FString &)
 {
 	FRecordedBallCollisionWorld W;
 	Court(W);
@@ -162,11 +162,12 @@ bool FBallCollisionReplay::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallLegacyCheckpoint, "FourSquareVR.Ball.History.LegacyV1FeatureMigration",
 								 ReplayFlags)
-bool FBallLegacyCheckpoint::RunTest(const FString&)
+bool FBallLegacyCheckpoint::RunTest(const FString &)
 {
 	auto Source = BallTests::RichState();
 	TArray<uint8> Bytes;
 	FBallStateCodec::Save(Source, Bytes);
+	Bytes.SetNum(Bytes.Num() - sizeof(int32)); // Schema 3 appends an empty dynamic-pair count; v1 did not contain it.
 	// Explicit v1 fixture layout: 14-byte header, contact records at payload 238; v2 adds four bytes after each
 	// collider.
 	for (int32 I = Source.ContactCount - 1; I >= 0; --I)
@@ -188,7 +189,7 @@ bool FBallLegacyCheckpoint::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallRepeatedEnergy, "FourSquareVR.Ball.Collision.RepeatedNarrowContactsAndEnergy",
 								 ReplayFlags)
-bool FBallRepeatedEnergy::RunTest(const FString&)
+bool FBallRepeatedEnergy::RunTest(const FString &)
 {
 	FRecordedBallCollisionWorld W;
 	W.AddPlane({1, 1}, FVector::ZeroVector, FVector::ForwardVector);
@@ -220,7 +221,7 @@ bool FBallRepeatedEnergy::RunTest(const FString&)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallCollisionPerformance, "FourSquareVR.Ball.Collision.BoundedReplayPerformance",
 								 ReplayFlags)
-bool FBallCollisionPerformance::RunTest(const FString&)
+bool FBallCollisionPerformance::RunTest(const FString &)
 {
 	FRecordedBallCollisionWorld W;
 	Court(W);

@@ -7,14 +7,14 @@ public class FourSquareVR : ModuleRules
 	public FourSquareVR(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "HeadMountedDisplay" }); // Existing Grip controller/XR tracking APIs.
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "PhysicsCore" }); // Read-only surface material metadata; no rigid-body simulation.
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
+
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 

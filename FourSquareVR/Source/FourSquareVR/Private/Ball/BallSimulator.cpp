@@ -1,18 +1,19 @@
 #include "Ball/BallSimulator.h"
 #include "Ball/BallIntegrator.h"
 #include "Ball/BallCollisionSolver.h"
+#include "Ball/BallHandCollisionSolver.h"
+#include "Ball/BallMotionContactPolicy.h"
 #include "HAL/PlatformTime.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 
-EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepInputs& Inputs,
-											 const FBallPhysicsConfig& Config, const IBallCollisionWorld& World,
-											 FBallStepOutput& Output)
+EBallStepResult FBallSimulator::SimulateStep(FBallState &State, const FBallStepInputs &Inputs,
+											 const FBallPhysicsConfig &Config, const IBallCollisionWorld &World,
+											 FBallStepOutput &Output)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(Handball_SimulateStep);
 	const double Start = FPlatformTime::Seconds();
 	Output = {};
-	const auto Finish = [&](EBallStepResult Result)
-	{
+	const auto Finish = [&](EBallStepResult Result) {
 		Output.Result = Result;
 		if (Result != EBallStepResult::Success)
 		{
@@ -37,7 +38,8 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 	{
 		return Finish(EBallStepResult::InvalidInputs);
 	}
-	if (World.GetRevision() != State.EnvironmentRevision || Inputs.EnvironmentRevision != State.EnvironmentRevision)
+	if (World.GetRevision() != State.EnvironmentRevision || Inputs.EnvironmentRevision != State.EnvironmentRevision ||
+		!World.ValidateInputs(Inputs))
 	{
 		return Finish(EBallStepResult::IncompatibleEnvironment);
 	}
@@ -48,6 +50,11 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 		AngularAcceleration += Inputs.Forces[I].AngularAcceleration;
 	}
 	const double Dt = Config.GetFixedDeltaTime();
+	const FBallMotionFrame *Motion = World.GetMotionFrame(Inputs);
+	if (Motion && (Motion->Epoch != State.Identity.Epoch || FMath::Abs(Motion->DeltaTime - Dt) > 1.e-12))
+	{
+		return Finish(EBallStepResult::IncompatibleEnvironment);
+	}
 	const double Required = FMath::Sqrt(Acceleration.Size() * Dt * Dt / (8 * Config.CCDTolerance));
 	if (!FMath::IsFinite(Required) || AngularAcceleration.ContainsNaN())
 	{
@@ -58,8 +65,7 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 		return Finish(EBallStepResult::SubdivisionLimit);
 	}
 	const int32 InitialIntervals = FMath::Max(1, FMath::CeilToInt32(Required));
-	const auto MakeQuery = [&](const FBallState& S, double BeginFraction, double EndFraction)
-	{
+	const auto MakeQuery = [&](FBallState &S, double BeginFraction, double EndFraction) {
 		FBallCollisionQuery Q;
 		Q.Start = Q.End = S.Position;
 		Q.Radius = Config.Radius;
@@ -71,10 +77,18 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 		Q.bTraceComplex = Config.bTraceComplex;
 		Q.bUsePhysicalMaterials = Config.bUsePhysicalMaterials;
 		Q.MaximumCandidates = Config.MaximumWorldCandidates;
+		Q.StepFrame = Inputs.SimulationFrame;
+		Q.MotionTimebase = Inputs.MotionTimebase;
+		Q.MotionRevision = Inputs.MotionRevision;
+		if (Motion)
+		{
+			Q.IgnoredMotionMask = FBallMotionContactPolicy::PrepareQuery(
+				S, *Motion, BeginFraction, Config.Radius,
+				FMath::Max(Config.DynamicContactReleaseDistance, 2 * Config.PenetrationTolerance));
+		}
 		return Q;
 	};
-	const auto Gather = [&](const FBallCollisionQuery& Q, FBallContactBatch& Batch)
-	{
+	const auto Gather = [&](const FBallCollisionQuery &Q, FBallContactBatch &Batch) {
 		++Output.Diagnostics.Queries;
 		const auto Result = World.GatherContacts(Q, Batch);
 		if (Result == EBallQueryResult::CapacityExceeded)
@@ -102,18 +116,24 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 		Batch = Validated;
 		return EBallStepResult::Success;
 	};
-	const auto Probe = [&](FBallState& S, FBallContactBatch& Batch, double Fraction)
-	{
-		auto Q = MakeQuery(S, 0, 1);
+	const auto Probe = [&](FBallState &S, FBallContactBatch &Batch, double Fraction) {
+		auto Q = MakeQuery(S, FMath::Min(Fraction, 1.0 - 1.e-12), 1);
 		Q.bProximity = true;
 		Q.ProbeDistance = 2 * FMath::Max(Config.PenetrationTolerance, Config.CCDTolerance);
 		if (Fraction >= 1)
 		{
 			Q.Time.Frame = S.SimulationFrame + 1;
+			Q.Time.Fraction = 0;
 		}
 		else
 		{
 			Q.Time.Fraction = Fraction;
+		}
+		if (Motion)
+		{
+			Q.IgnoredMotionMask = FBallMotionContactPolicy::PrepareQuery(
+				S, *Motion, Fraction, Config.Radius,
+				FMath::Max(Config.DynamicContactReleaseDistance, 2 * Config.PenetrationTolerance));
 		}
 		return Gather(Q, Batch);
 	};
@@ -122,6 +142,10 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 	for (int32 Intervals = InitialIntervals; Intervals <= Config.MaximumMicrointervals; Intervals *= 2)
 	{
 		FBallState Candidate = State;
+		if (Motion)
+		{
+			FBallMotionContactPolicy::RetireAbsent(Candidate, *Motion);
+		}
 		Output.ContactCount = Output.EventCount = 0;
 		EBallStepResult Result = EBallStepResult::Success;
 		FBallContactBatch Near;
@@ -140,7 +164,10 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 		}
 		if (Candidate.Activity == EBallActivityState::Resting && bBalanced && !bDeep &&
 			AngularAcceleration.IsNearlyZero() && Candidate.LinearVelocity.Size() <= Config.WakeSpeed &&
-			Candidate.AngularVelocity.Size() <= Config.SleepAngularSpeed)
+			Candidate.AngularVelocity.Size() <= Config.SleepAngularSpeed &&
+			(!Motion || !FBallHandCollisionSolver::CouldReach(
+							*Motion, Candidate.Position,
+							Config.Radius + FMath::Max(Config.CCDTolerance, Config.PenetrationTolerance))))
 		{
 			if (!FBallCollisionSolver::RefreshContacts(Candidate, Near, true))
 			{
@@ -165,6 +192,8 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 		for (int32 Micro = 0; Micro < Intervals && Result == EBallStepResult::Success; ++Micro)
 		{
 			++Output.Diagnostics.Microintervals;
+			FVector ForceBaseLinear = Candidate.LinearVelocity, ForceBaseAngular = Candidate.AngularVelocity;
+			double ForceStartElapsed = 0, ForceDuration = H;
 			if (!FBallIntegrator::Kick(Candidate, Acceleration, AngularAcceleration, Config, H))
 			{
 				Result = EBallStepResult::NumericFailure;
@@ -173,13 +202,29 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 			double Remaining = H, Elapsed = 0;
 			while (Remaining > 1.e-12 && Result == EBallStepResult::Success)
 			{
+				if (++Output.Diagnostics.MotionSlices > 256u * uint32(Config.MaximumMicrointervals))
+				{
+					Result = EBallStepResult::SubdivisionLimit;
+					break;
+				}
 				const double Fraction = (Micro * H + Elapsed) / Dt;
 				auto Q = MakeQuery(Candidate, FMath::Min(Fraction, 1.0 - 1.e-12),
 								   static_cast<double>(Micro + 1) / Intervals);
-				Q.End = Q.Start + Candidate.LinearVelocity * Remaining;
-				Q.TOIFractionTolerance =
-					FMath::Min3(1.e-3, Config.TOITolerance / Remaining,
-								Config.CCDTolerance / FMath::Max(1.e-12, (Q.End - Q.Start).Size()));
+				if (Motion)
+				{
+					Q.EndFraction = FBallHandCollisionSolver::NextBoundary(*Motion, Fraction, Q.EndFraction);
+				}
+				const double Slice = FMath::Min(Remaining, (Q.EndFraction - Fraction) * Dt);
+				if (Slice <= 1.e-14)
+				{
+					Result = EBallStepResult::SubdivisionLimit;
+					break;
+				}
+				Q.End = Q.Start + Candidate.LinearVelocity * Slice;
+				const double MaximumTravel =
+					Motion ? FBallHandCollisionSolver::MaximumRelativeTravel(*Motion, Q) : (Q.End - Q.Start).Size();
+				Q.TOIFractionTolerance = FMath::Min3(1.e-3, Config.TOITolerance / Slice,
+													 Config.CCDTolerance / FMath::Max(1.e-12, MaximumTravel));
 				FBallContactBatch Batch;
 				Result = Gather(Q, Batch);
 				if (Result != EBallStepResult::Success)
@@ -188,13 +233,13 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 				}
 				if (Batch.Count == 0)
 				{
-					if (!FBallIntegrator::Drift(Candidate, Remaining))
+					if (!FBallIntegrator::Drift(Candidate, Slice))
 					{
 						Result = EBallStepResult::NumericFailure;
 					}
-					Elapsed += Remaining;
-					Remaining = 0;
-					break;
+					Elapsed += Slice;
+					Remaining -= Slice;
+					continue;
 				}
 				++Output.Diagnostics.CollisionIterations;
 				if (++IterationsThisAttempt > static_cast<uint32>(Config.MaximumCollisionIterations))
@@ -207,7 +252,7 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 				{
 					TOI = FMath::Min(TOI, Batch.Contacts[I].TimeOfImpact);
 				}
-				const double Travel = Remaining * TOI;
+				const double Travel = Slice * TOI;
 				if (!FBallIntegrator::Drift(Candidate, Travel))
 				{
 					Result = EBallStepResult::NumericFailure;
@@ -215,6 +260,12 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 				}
 				Elapsed += Travel;
 				Remaining -= Travel;
+				const FVector PredictedLinear = Candidate.LinearVelocity, PredictedAngular = Candidate.AngularVelocity;
+				// Use velocity at impact, not the future endpoint of the pending force stage.
+				const double ForceFraction =
+					ForceDuration > 1.e-12 ? FMath::Clamp((Elapsed - ForceStartElapsed) / ForceDuration, 0.0, 1.0) : 1;
+				Candidate.LinearVelocity = FMath::Lerp(ForceBaseLinear, Candidate.LinearVelocity, ForceFraction);
+				Candidate.AngularVelocity = FMath::Lerp(ForceBaseAngular, Candidate.AngularVelocity, ForceFraction);
 				// A tangential/resting face is still a constraint after a different face's impulse.
 				FBallContactBatch Neighbours;
 				Result = Probe(Candidate, Neighbours, (Micro * H + Elapsed) / Dt);
@@ -226,7 +277,7 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 				MergeQuery.bProximity = true;
 				for (int32 I = 0; I < Neighbours.Count; ++I)
 				{
-					const auto& C = Neighbours.Contacts[I];
+					const auto &C = Neighbours.Contacts[I];
 					if (C.Separation > Config.PenetrationTolerance)
 					{
 						continue;
@@ -248,14 +299,29 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 					break;
 				}
 				Batch.Sort();
+				if (Motion)
+				{
+					FBallMotionContactPolicy::FilterConflicts(Candidate, Batch, Config.PenetrationTolerance, Output);
+				}
+				if (!Batch.Count)
+				{
+					Candidate.LinearVelocity = PredictedLinear;
+					Candidate.AngularVelocity = PredictedAngular;
+					continue; // Requery with blocked sources excluded, preserving later static hits.
+				}
+				const int32 FirstEvent = Output.EventCount;
 				Result = FBallCollisionSolver::Resolve(Candidate, Batch, Config, (Micro * H + Elapsed) / Dt, Output);
 				if (Result != EBallStepResult::Success)
 				{
 					break;
 				}
+				if (Motion)
+				{
+					FBallMotionContactPolicy::CompleteResponse(Candidate, Batch, FirstEvent, Output);
+				}
 				for (int32 I = 0; I < Batch.Count; ++I)
 				{
-					const auto& C = Batch.Contacts[I];
+					const auto &C = Batch.Contacts[I];
 					if (C.PenetrationDepth > 0)
 					{
 						++Output.Diagnostics.PenetrationCorrections;
@@ -264,6 +330,37 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState& State, const FBallStepI
 				if (!FBallCollisionSolver::Separate(Candidate, Batch, Config.PenetrationTolerance))
 				{
 					Result = EBallStepResult::PenetrationFailure;
+				}
+				if (Result != EBallStepResult::Success)
+				{
+					break;
+				}
+				ForceBaseLinear = Candidate.LinearVelocity;
+				ForceBaseAngular = Candidate.AngularVelocity;
+				ForceStartElapsed = Elapsed;
+				ForceDuration = Remaining;
+				if (Remaining > 1.e-12)
+				{
+					if (!FBallIntegrator::Kick(Candidate, Acceleration, AngularAcceleration, Config, Remaining))
+					{
+						Result = EBallStepResult::NumericFailure;
+						break;
+					}
+					bool bReentry = false;
+					FBallContactBatch Support = Batch;
+					for (int32 I = 0; I < Support.Count; ++I)
+					{
+						auto &C = Support.Contacts[I];
+						C.bAllowImpact = false;
+						bReentry |=
+							FVector::DotProduct(Candidate.LinearVelocity - C.SurfaceVelocity, C.Normal) < -1.e-6;
+					}
+					if (bReentry)
+					{
+						++Output.Diagnostics.SupportForceSolves;
+						Result = FBallCollisionSolver::Resolve(Candidate, Support, Config, (Micro * H + Elapsed) / Dt,
+															   Output, false);
+					}
 				}
 			}
 		}

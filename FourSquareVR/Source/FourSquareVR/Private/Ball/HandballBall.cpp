@@ -36,7 +36,7 @@ AHandballBall::AHandballBall()
 }
 AHandballBall::~AHandballBall() = default;
 
-void AHandballBall::OnConstruction(const FTransform& Transform)
+void AHandballBall::OnConstruction(const FTransform &Transform)
 {
 	Super::OnConstruction(Transform);
 	SceneRoot->SetWorldScale3D(FVector::OneVector); // Physical radius is explicit configuration, not Actor scale.
@@ -55,7 +55,7 @@ void AHandballBall::BeginPlay()
 	{
 		return;
 	} // Custom snapshot/prediction transport is Stage 5/6.
-	if (auto* System = GetWorld()->GetSubsystem<UBallSimulationSubsystem>())
+	if (auto *System = GetWorld()->GetSubsystem<UBallSimulationSubsystem>())
 	{
 		if (!System->RegisterBall(this))
 		{
@@ -66,7 +66,7 @@ void AHandballBall::BeginPlay()
 
 void AHandballBall::EndPlay(const EEndPlayReason::Type Reason)
 {
-	if (auto* System = GetWorld()->GetSubsystem<UBallSimulationSubsystem>())
+	if (auto *System = GetWorld()->GetSubsystem<UBallSimulationSubsystem>())
 	{
 		System->UnregisterBall(this);
 	}
@@ -102,7 +102,23 @@ bool AHandballBall::InitializeSimulation(FBallIdentity Identity, uint64 Frame, u
 	return true;
 }
 
-bool AHandballBall::PrepareStep(const IBallCollisionWorld& World, uint64 Frame)
+void AHandballBall::ApplyWorldOffset(const FVector &Offset, bool bWorldShift)
+{
+	Super::ApplyWorldOffset(Offset, bWorldShift);
+	InitialTransform.AddToTranslation(Offset);
+	if (bInitialized)
+	{
+		State.Position += Offset;
+		for (int32 I = 0; I < State.ContactCount; ++I)
+		{
+			State.Contacts[I].ContactPoint += Offset;
+		}
+	}
+	// Coordinator starts a new environment/timebase/generation and clears histories before another fixed step.
+}
+
+bool AHandballBall::PrepareStep(const IBallCollisionWorld &World, uint64 Frame, uint32 MotionTimebase,
+								uint32 MotionRevision)
 {
 	if (!bInitialized || State.SimulationFrame != Frame)
 	{
@@ -113,6 +129,8 @@ bool AHandballBall::PrepareStep(const IBallCollisionWorld& World, uint64 Frame)
 	PreparedInputs.ConfigVersion = State.ConfigVersion;
 	PreparedInputs.MaterialVersion = State.MaterialVersion;
 	PreparedInputs.EnvironmentRevision = State.EnvironmentRevision;
+	PreparedInputs.MotionTimebase = MotionTimebase;
+	PreparedInputs.MotionRevision = MotionRevision;
 	if (History.CanPush({State, PreparedInputs}) != EBallHistoryWrite::Stored)
 	{
 		return false;
@@ -130,10 +148,21 @@ bool AHandballBall::PrepareStep(const IBallCollisionWorld& World, uint64 Frame)
 
 void AHandballBall::CommitStep()
 {
-	check(History.Push({State, PreparedInputs}) == EBallHistoryWrite::Stored);
+	// History must also be written in builds where check expressions are compiled out.
+	const auto Write = History.Push({State, PreparedInputs});
+	check(Write == EBallHistoryWrite::Stored);
+	if (Write != EBallHistoryWrite::Stored)
+	{
+		UE_LOG(LogHandballBall, Fatal, TEXT("Preflighted ball history write failed during commit."));
+	}
 	State = PreparedState;
 	*LastOutputStorage = *PreparedOutput;
 	ProjectState();
+}
+
+UBallSimulationSubsystem *AHandballBall::GetSimulationCoordinator() const
+{
+	return GetWorld() ? GetWorld()->GetSubsystem<UBallSimulationSubsystem>() : nullptr;
 }
 void AHandballBall::ProjectState()
 {
@@ -184,7 +213,7 @@ bool AHandballBall::LaunchBall(FVector Velocity, FVector AngularVelocity)
 	return SetBallState(State.Position, Velocity, State.Rotation.Rotator(), AngularVelocity);
 }
 
-bool AHandballBall::SetBallPhysicsConfig(const FBallPhysicsConfig& Config)
+bool AHandballBall::SetBallPhysicsConfig(const FBallPhysicsConfig &Config)
 {
 	if (!HasAuthority() || !bInitialized || !Config.IsValid() ||
 		Config.FixedFrequency != RuntimePhysics.FixedFrequency || RuntimePhysics.Version == MAX_int32 ||
@@ -207,19 +236,41 @@ void AHandballBall::DrawDiagnostics() const
 	{
 		return;
 	}
-	UWorld* World = GetWorld();
-	const FBallStepOutput& LastOutput = *LastOutputStorage;
+	UWorld *World = GetWorld();
+	const FBallStepOutput &LastOutput = *LastOutputStorage;
 	DrawDebugSphere(World, State.Position, RuntimePhysics.Radius, 16, IsBallResting() ? FColor::Green : FColor::Cyan);
 	DrawDebugLine(World, State.Position, State.Position + State.LinearVelocity * 0.05, FColor::Yellow);
+	for (int32 I = 0; I < State.MotionPairCount; ++I)
+	{
+		const auto &P = State.MotionPairs[I];
+		if (P.bBlocked)
+		{
+			DrawDebugString(World, State.Position + FVector(0, 0, 25 + I * 10),
+							FString::Printf(TEXT("Collider %llu: %s"), P.Collider.Value,
+											P.BlockReason == EBallMotionBlockReason::InitialOverlap
+												? TEXT("initial overlap: separate to arm")
+												: TEXT("infeasible moving contact: separate to re-enable")),
+							nullptr, FColor::Orange, 0);
+		}
+	}
 	for (int32 I = 0; I < LastOutput.ContactCount; ++I)
 	{
-		const auto& C = LastOutput.Contacts[I];
+		const auto &C = LastOutput.Contacts[I];
 		DrawDebugPoint(World, C.Position, 6, FColor::Red);
 		DrawDebugLine(World, C.Position, C.Position + C.Normal * 15, FColor::Red);
 	}
+	for (int32 I = 0; I < LastOutput.EventCount; ++I)
+	{
+		const auto &E = LastOutput.Events[I];
+		DrawDebugString(World, E.Position + FVector(0, 0, 8),
+						FString::Printf(TEXT("hit P%u side%u ep%u ord%u F%llu+%.5f"), E.Participant, E.HandSide,
+										E.Episode, E.Ordinal, E.Time.Frame, E.Time.Fraction),
+						nullptr, FColor::Yellow, 0);
+	}
 	DrawDebugString(World, State.Position + FVector(0, 0, 15),
-					FString::Printf(TEXT("F%llu %.1fus Q%u I%u"), State.SimulationFrame,
+					FString::Printf(TEXT("F%llu %.1fus Q%u I%u rejected=%u events=%d"), State.SimulationFrame,
 									LastOutput.Diagnostics.DurationMicroseconds, LastOutput.Diagnostics.Queries,
-									LastOutput.Diagnostics.CollisionIterations),
+									LastOutput.Diagnostics.CollisionIterations,
+									LastOutput.Diagnostics.RejectedMotionContacts, LastOutput.EventCount),
 					nullptr, FColor::White, 0);
 }

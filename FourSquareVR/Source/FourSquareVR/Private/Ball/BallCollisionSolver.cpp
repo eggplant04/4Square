@@ -2,15 +2,15 @@
 
 namespace
 {
-double Restitution(const FBallContact& C, const FBallPhysicsConfig& P)
+double Restitution(const FBallContact &C, const FBallPhysicsConfig &P)
 {
 	return C.Material.bOverride ? FMath::Sqrt(P.Restitution * C.Material.Restitution) : P.Restitution;
 }
-double Friction(const FBallContact& C, const FBallPhysicsConfig& P)
+double Friction(const FBallContact &C, const FBallPhysicsConfig &P)
 {
 	return C.Material.bOverride ? FMath::Sqrt(P.SurfaceFriction * C.Material.Friction) : P.SurfaceFriction;
 }
-int32 Cache(FBallState& S, const FBallContact& C, bool& bNew)
+int32 Cache(FBallState &S, const FBallContact &C, bool &bNew)
 {
 	bNew = false;
 	for (int32 I = 0; I < S.ContactCount; ++I)
@@ -48,12 +48,12 @@ int32 Cache(FBallState& S, const FBallContact& C, bool& bNew)
 	bNew = true;
 	return Index;
 }
-double Energy(const FBallState& S, const FBallPhysicsConfig& P)
+double Energy(const FBallState &S, const FBallPhysicsConfig &P)
 {
 	return 0.5 *
 		   (P.Mass * S.LinearVelocity.SizeSquared() + P.GetSolidSphereInertia() * S.AngularVelocity.SizeSquared());
 }
-bool InitialContact(const FBallCollisionQuery& Q, FBallContact& C)
+bool InitialContact(const FBallCollisionQuery &Q, FBallContact &C)
 {
 	C.TimeOfImpact = 0;
 	C.PenetrationDepth = FMath::Max(0.0, -C.Separation);
@@ -64,11 +64,10 @@ bool InitialContact(const FBallCollisionQuery& Q, FBallContact& C)
 }
 // A 3D frictionless contact QP has an equivalent active set of at most three independent normals.
 // Enumerating <= 92 small systems avoids slow PGS convergence in acute wedges; no render-rate/ad-hoc angle fix.
-bool ProjectNormalVelocity(const FVector& Base, const FBallContactBatch& Batch, const double* Targets, double Mass,
-						   double* Impulses, FVector& Velocity)
+bool ProjectNormalVelocity(const FVector &Base, const FBallContactBatch &Batch, const double *Targets, double Mass,
+						   double *Impulses, FVector &Velocity)
 {
-	const auto TrySet = [&](const int32* Active, int32 Count, double* OutImpulse, FVector& OutVelocity)
-	{
+	const auto TrySet = [&](const int32 *Active, int32 Count, double *OutImpulse, FVector &OutVelocity) {
 		double Matrix[3][4] = {};
 		for (int32 R = 0; R < Count; ++R)
 		{
@@ -76,7 +75,7 @@ bool ProjectNormalVelocity(const FVector& Base, const FBallContactBatch& Batch, 
 			{
 				Matrix[R][C] = FVector::DotProduct(Batch.Contacts[Active[R]].Normal, Batch.Contacts[Active[C]].Normal);
 			}
-			const auto& C = Batch.Contacts[Active[R]];
+			const auto &C = Batch.Contacts[Active[R]];
 			Matrix[R][Count] = Targets[Active[R]] + FVector::DotProduct(C.SurfaceVelocity - Base, C.Normal);
 		}
 		for (int32 Col = 0; Col < Count; ++Col)
@@ -170,7 +169,7 @@ bool ProjectNormalVelocity(const FVector& Base, const FBallContactBatch& Batch, 
 }
 } // namespace
 
-bool FBallCollisionSolver::SphereTOI(const FVector& S, const FVector& D, double Radius, double& OutTime)
+bool FBallCollisionSolver::SphereTOI(const FVector &S, const FVector &D, double Radius, double &OutTime)
 {
 	const double A = D.SizeSquared(), B = 2 * FVector::DotProduct(S, D), C = S.SizeSquared() - Radius * Radius;
 	if (!FMath::IsFinite(A) || !FMath::IsFinite(B) || !FMath::IsFinite(C) || A < 1.e-20)
@@ -205,8 +204,8 @@ bool FBallCollisionSolver::SphereTOI(const FVector& S, const FVector& D, double 
 	return true;
 }
 
-bool FBallCollisionSolver::SweepSphere(const FBallCollisionQuery& Q, const FVector& Center, double Radius,
-									   FBallContact& C)
+bool FBallCollisionSolver::SweepSphere(const FBallCollisionQuery &Q, const FVector &Center, double Radius,
+									   FBallContact &C)
 {
 	const FVector Offset = Q.Start - Center;
 	const double Distance = Offset.Size();
@@ -229,8 +228,8 @@ bool FBallCollisionSolver::SweepSphere(const FBallCollisionQuery& Q, const FVect
 	return true;
 }
 
-bool FBallCollisionSolver::SweepBox(const FBallCollisionQuery& Q, const FVector& Min, const FVector& Max,
-									FBallContact& C)
+bool FBallCollisionSolver::SweepBox(const FBallCollisionQuery &Q, const FVector &Min, const FVector &Max,
+									FBallContact &C)
 {
 	const FVector Closest = Q.Start.ComponentMax(Min).ComponentMin(Max);
 	const FVector Offset = Q.Start - Closest;
@@ -301,8 +300,7 @@ bool FBallCollisionSolver::SweepBox(const FBallCollisionQuery& Q, const FVector&
 	bool bFound = false;
 	double BestTime = 2;
 	FBallContact Best = C;
-	const auto Candidate = [&](double Time, const FVector& Point, uint32 Feature)
-	{
+	const auto Candidate = [&](double Time, const FVector &Point, uint32 Feature) {
 		if (Time < 0 || Time > 1 || Time > BestTime)
 		{
 			return;
@@ -403,7 +401,7 @@ bool FBallCollisionSolver::SweepBox(const FBallCollisionQuery& Q, const FVector&
 	return bFound;
 }
 
-bool FBallCollisionSolver::RefreshContacts(FBallState& State, const FBallContactBatch& Batch, bool bSupporting)
+bool FBallCollisionSolver::RefreshContacts(FBallState &State, const FBallContactBatch &Batch, bool bSupporting)
 {
 	for (int32 I = 0; I < State.ContactCount; ++I)
 	{
@@ -412,13 +410,13 @@ bool FBallCollisionSolver::RefreshContacts(FBallState& State, const FBallContact
 	for (int32 I = 0; I < Batch.Count; ++I)
 	{
 		bool bNew;
-		const FBallContact& C = Batch.Contacts[I];
+		const FBallContact &C = Batch.Contacts[I];
 		const int32 Index = Cache(State, C, bNew);
 		if (Index == INDEX_NONE)
 		{
 			return false;
 		}
-		auto& Cached = State.Contacts[Index];
+		auto &Cached = State.Contacts[Index];
 		Cached.Normal = C.Normal;
 		Cached.ContactPoint = C.Position;
 		Cached.Separation = C.Separation;
@@ -428,7 +426,14 @@ bool FBallCollisionSolver::RefreshContacts(FBallState& State, const FBallContact
 	return true;
 }
 
-bool FBallCollisionSolver::Separate(FBallState& State, const FBallContactBatch& Batch, double Skin)
+bool FBallCollisionSolver::HasFeasibleVelocity(const FBallContactBatch &Batch)
+{
+	double Targets[BallLimits::Contacts] = {}, Impulses[BallLimits::Contacts] = {};
+	FVector Velocity;
+	return ProjectNormalVelocity(FVector::ZeroVector, Batch, Targets, 1, Impulses, Velocity);
+}
+
+bool FBallCollisionSolver::Separate(FBallState &State, const FBallContactBatch &Batch, double Skin)
 {
 	FBallContactBatch Static = Batch;
 	double Targets[BallLimits::Contacts] = {}, Impulses[BallLimits::Contacts] = {};
@@ -446,9 +451,9 @@ bool FBallCollisionSolver::Separate(FBallState& State, const FBallContactBatch& 
 	return !State.Position.ContainsNaN();
 }
 
-bool FBallCollisionSolver::CanSupport(const FBallContactBatch& Batch, const FVector& Acceleration,
-									  const FBallPhysicsConfig& Config, FVector& OutNormal,
-									  FBallColliderId& OutCollider)
+bool FBallCollisionSolver::CanSupport(const FBallContactBatch &Batch, const FVector &Acceleration,
+									  const FBallPhysicsConfig &Config, FVector &OutNormal,
+									  FBallColliderId &OutCollider)
 {
 	if (Batch.Count == 0)
 	{
@@ -465,7 +470,7 @@ bool FBallCollisionSolver::CanSupport(const FBallContactBatch& Batch, const FVec
 	int32 Strongest = 0;
 	for (int32 I = 0; I < Batch.Count; ++I)
 	{
-		const auto& C = Batch.Contacts[I];
+		const auto &C = Batch.Contacts[I];
 		if (!C.SurfaceVelocity.IsNearlyZero(1.e-6))
 		{
 			return false;
@@ -488,9 +493,9 @@ bool FBallCollisionSolver::CanSupport(const FBallContactBatch& Batch, const FVec
 	return Remaining.Size() <= FMath::Min(FrictionCapacity, Config.RollingResistance * NormalAcceleration) + 1.e-6;
 }
 
-EBallStepResult FBallCollisionSolver::Resolve(FBallState& State, const FBallContactBatch& Batch,
-											  const FBallPhysicsConfig& Config, double Fraction,
-											  FBallStepOutput& Output)
+EBallStepResult FBallCollisionSolver::Resolve(FBallState &State, const FBallContactBatch &Batch,
+											  const FBallPhysicsConfig &Config, double Fraction,
+											  FBallStepOutput &Output, bool bRecordFacts)
 {
 	if (Batch.Count < 1 || Batch.Count > BallLimits::Contacts)
 	{
@@ -514,15 +519,14 @@ EBallStepResult FBallCollisionSolver::Resolve(FBallState& State, const FBallCont
 		{
 			Jn[I] = 0;
 			Jt[I] = FVector::ZeroVector;
-			const auto& C = Batch.Contacts[I];
+			const auto &C = Batch.Contacts[I];
 			const double Vn = FVector::DotProduct(Incoming - C.SurfaceVelocity, C.Normal);
-			Target[I] =
-				Attempt == 0 && C.PenetrationDepth <= Config.PenetrationTolerance && Vn < -Config.MinimumImpactSpeed
-					? -Restitution(C, Config) * Vn
-					: 0;
+			Target[I] = Attempt == 0 && C.bAllowImpact && C.PenetrationDepth <= Config.PenetrationTolerance &&
+								Vn < -Config.MinimumImpactSpeed
+							? -Restitution(C, Config) * Vn
+							: 0;
 		}
-		const auto CorrectNormals = [&]()
-		{
+		const auto CorrectNormals = [&]() {
 			FVector Base = State.LinearVelocity;
 			for (int32 I = 0; I < Batch.Count; ++I)
 			{
@@ -540,7 +544,7 @@ EBallStepResult FBallCollisionSolver::Resolve(FBallState& State, const FBallCont
 			}
 			for (int32 I = 0; I < Batch.Count; ++I)
 			{
-				const auto& C = Batch.Contacts[I];
+				const auto &C = Batch.Contacts[I];
 				const FVector Arm = -C.Normal * Config.Radius;
 				const FVector Relative =
 					State.LinearVelocity + FVector::CrossProduct(State.AngularVelocity, Arm) - C.SurfaceVelocity;
@@ -566,7 +570,7 @@ EBallStepResult FBallCollisionSolver::Resolve(FBallState& State, const FBallCont
 				bool bClamped = false;
 				for (int32 I = 0; I < Batch.Count; ++I)
 				{
-					const auto& C = Batch.Contacts[I];
+					const auto &C = Batch.Contacts[I];
 					const double Limit = Friction(C, Config) * Jn[I];
 					if (Jt[I].Size() <= Limit + 1.e-8)
 					{
@@ -611,18 +615,18 @@ EBallStepResult FBallCollisionSolver::Resolve(FBallState& State, const FBallCont
 	}
 	for (int32 I = 0; I < Batch.Count; ++I)
 	{
-		const auto& C = Batch.Contacts[I];
+		const auto &C = Batch.Contacts[I];
 		if (FVector::DotProduct(State.LinearVelocity - C.SurfaceVelocity, C.Normal) < -1.e-4)
 		{
 			return EBallStepResult::CollisionLimit;
 		}
 		bool bNew;
 		const int32 Index = Cache(State, C, bNew);
-		if (Index == INDEX_NONE || Output.ContactCount == BallLimits::StepEvents)
+		if (Index == INDEX_NONE || (bRecordFacts && Output.ContactCount == BallLimits::StepEvents))
 		{
 			return EBallStepResult::ContactCapacity;
 		}
-		auto& Cached = State.Contacts[Index];
+		auto &Cached = State.Contacts[Index];
 		const double ClosingSpeed = -FVector::DotProduct(Incoming - C.SurfaceVelocity, C.Normal);
 		Cached.Normal = C.Normal;
 		Cached.ContactPoint = C.Position;
@@ -633,8 +637,12 @@ EBallStepResult FBallCollisionSolver::Resolve(FBallState& State, const FBallCont
 		Cached.bRestitutionApplied = Target[I] > 0;
 		FBallContact Reported = C;
 		Reported.TimeOfImpact = Fraction;
-		Output.Contacts[Output.ContactCount++] = Reported;
-		if (ClosingSpeed > Config.MinimumImpactSpeed && Jn[I] > 0 && C.PenetrationDepth <= Config.PenetrationTolerance)
+		if (bRecordFacts)
+		{
+			Output.Contacts[Output.ContactCount++] = Reported;
+		}
+		if (bRecordFacts && C.bAllowImpact && ClosingSpeed > Config.MinimumImpactSpeed && Jn[I] > 0 &&
+			C.PenetrationDepth <= Config.PenetrationTolerance)
 		{
 			if (Output.EventCount == BallLimits::StepEvents || State.NextEventOrdinal == MAX_uint32 ||
 				Cached.Episode == MAX_uint32)
@@ -646,7 +654,7 @@ EBallStepResult FBallCollisionSolver::Resolve(FBallState& State, const FBallCont
 				++Cached.Episode;
 			}
 			Cached.LastImpactFrame = State.SimulationFrame;
-			auto& Event = Output.Events[Output.EventCount++];
+			auto &Event = Output.Events[Output.EventCount++];
 			Event.Ball = State.Identity;
 			Event.Category = C.Category;
 			Event.Time = {State.SimulationFrame, FMath::Min(Fraction, 1.0 - 1.e-12)};
@@ -661,6 +669,11 @@ EBallStepResult FBallCollisionSolver::Resolve(FBallState& State, const FBallCont
 			Event.IncomingAngularVelocity = IncomingAngular;
 			Event.OutgoingAngularVelocity = State.AngularVelocity;
 			Event.NormalImpulse = Jn[I];
+			Event.Participant = C.Participant;
+			Event.OriginRevision = C.OriginRevision;
+			Event.HandSide = C.HandSide;
+			Event.FirstSample = C.FirstSample;
+			Event.SecondSample = C.SecondSample;
 		}
 	}
 	return EBallStepResult::Success;

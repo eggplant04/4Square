@@ -15,54 +15,85 @@ UCLASS(Blueprintable)
 class FOURSQUAREVR_API AHandballBall : public AActor
 {
 	GENERATED_BODY()
-public:
+  public:
 	AHandballBall();
 	virtual ~AHandballBall() override;
-	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void OnConstruction(const FTransform &Transform) override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+	virtual void ApplyWorldOffset(const FVector &Offset, bool bWorldShift) override;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Ball")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ball")
 	FBallPhysicsConfig Physics;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Ball")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ball")
 	FBallNetworkSettings HistorySettings;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball|Test")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Test")
 	FVector InitialLinearVelocity = FVector::ZeroVector;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball|Test")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Test")
 	FVector InitialAngularVelocity = FVector::ZeroVector;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball|Debug")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Debug")
 	bool bDebugDraw = false;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Ball")
+	/** Runtime binding of existing unique LeftGrip/RightGrip sources; no Blueprint asset edits. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Hands")
+	bool bAutoRegisterVRHands = true;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ball")
 	TObjectPtr<USphereComponent> CollisionProxy;
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Ball")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ball")
 	TObjectPtr<UStaticMeshComponent> VisualMesh;
 
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, CallInEditor, Category="Ball|Test")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, CallInEditor, Category = "Ball|Test")
 	bool ResetBall();
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, CallInEditor, Category="Ball|Test")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, CallInEditor, Category = "Ball|Test")
 	bool LaunchConfiguredBall();
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category="Ball")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ball")
 	bool LaunchBall(FVector LinearVelocity, FVector AngularVelocity);
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category="Ball")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ball")
 	bool SetBallState(FVector Position, FVector LinearVelocity, FRotator Rotation, FVector AngularVelocity);
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category="Ball")
-	bool SetBallPhysicsConfig(const FBallPhysicsConfig& Config);
-	UFUNCTION(BlueprintPure, Category="Ball")
-	FVector GetBallPosition() const { return State.Position; }
-	UFUNCTION(BlueprintPure, Category="Ball")
-	FVector GetBallLinearVelocity() const { return State.LinearVelocity; }
-	UFUNCTION(BlueprintPure, Category="Ball")
-	FVector GetBallAngularVelocity() const { return State.AngularVelocity; }
-	UFUNCTION(BlueprintPure, Category="Ball")
-	bool IsBallResting() const { return State.Activity == EBallActivityState::Resting; }
-	const FBallState& GetSimulationState() const { return State; }
-	const FBallHistoryBuffer& GetHistory() const { return History; }
-	const FBallStepOutput& GetLastStepOutput() const { return *LastOutputStorage; }
-	bool IsSimulationReady() const { return bInitialized; }
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Ball")
+	bool SetBallPhysicsConfig(const FBallPhysicsConfig &Config);
+	UFUNCTION(BlueprintPure, Category = "Ball")
+	FVector GetBallPosition() const
+	{
+		return State.Position;
+	}
+	UFUNCTION(BlueprintPure, Category = "Ball")
+	FVector GetBallLinearVelocity() const
+	{
+		return State.LinearVelocity;
+	}
+	UFUNCTION(BlueprintPure, Category = "Ball")
+	FVector GetBallAngularVelocity() const
+	{
+		return State.AngularVelocity;
+	}
+	UFUNCTION(BlueprintPure, Category = "Ball")
+	bool IsBallResting() const
+	{
+		return State.Activity == EBallActivityState::Resting;
+	}
+	UFUNCTION(BlueprintPure, Category = "Ball|Debug")
+	UBallSimulationSubsystem *GetSimulationCoordinator() const;
+	const FBallState &GetSimulationState() const
+	{
+		return State;
+	}
+	const FBallHistoryBuffer &GetHistory() const
+	{
+		return History;
+	}
+	const FBallStepOutput &GetLastStepOutput() const
+	{
+		return *LastOutputStorage;
+	}
+	bool IsSimulationReady() const
+	{
+		return bInitialized;
+	}
 
-private:
+  private:
 	friend class UBallSimulationSubsystem;
-	UPROPERTY() TObjectPtr<USceneComponent> SceneRoot;
+	UPROPERTY()
+	TObjectPtr<USceneComponent> SceneRoot;
 	FBallState State, PreparedState;
 	FBallPhysicsConfig RuntimePhysics;
 	FBallHistoryBuffer History;
@@ -72,7 +103,8 @@ private:
 	FTransform InitialTransform;
 	bool bInitialized = false;
 	bool InitializeSimulation(FBallIdentity Identity, uint64 Frame, uint32 Environment);
-	bool PrepareStep(const IBallCollisionWorld& World, uint64 Frame);
+	bool PrepareStep(const IBallCollisionWorld &World, uint64 Frame, uint32 MotionTimebase = 0,
+					 uint32 MotionRevision = 0);
 	void CommitStep();
 	void ProjectState();
 	void DrawDiagnostics() const;
