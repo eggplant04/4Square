@@ -50,6 +50,7 @@ namespace BallTests
 		{
 			FBallContactState& Contact = Result.Contacts[I];
 			Contact.Collider = {static_cast<uint64>(100 + I), 2};
+			Contact.FeatureId = 31 + I;
 			Contact.Episode = I + 1;
 			Contact.LastImpactFrame = 180 + I;
 			Contact.Normal = FVector::RightVector;

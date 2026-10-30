@@ -74,6 +74,13 @@ bool FBallSimulationClock::ResumeAuthority(uint32 NewTimebase)
 	return true;
 }
 
+bool FBallSimulationClock::PauseAuthority()
+{
+	if (!bInitialized || Role != EBallClockRole::Authority) { return false; }
+	Status = EBallClockStatus::AuthorityPaused;
+	return true;
+}
+
 bool FBallSimulationClock::ApplyClientBaseline(uint64 Frame, uint32 NewTimebase)
 {
 	if (!bInitialized || Role != EBallClockRole::PredictedClient || Frame == MAX_uint64

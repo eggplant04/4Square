@@ -29,7 +29,7 @@ bool FBallState::IsValid() const
 	for (int32 I = 0; I < ContactCount; ++I)
 	{
 		if (!Contacts[I].IsValid() || Contacts[I].LastImpactFrame > SimulationFrame) { return false; }
-		for (int32 J = 0; J < I; ++J) { if (Contacts[J].Collider == Contacts[I].Collider) { return false; } }
+		for (int32 J = 0; J < I; ++J) { if (Contacts[J].Collider == Contacts[I].Collider && Contacts[J].FeatureId == Contacts[I].FeatureId) { return false; } }
 	}
 	for (int32 I = 0; I < ForceStateCount; ++I)
 	{

@@ -1,47 +1,115 @@
 #include "Ball/RecordedBallCollisionWorld.h"
+#include "Ball/BallCollisionSolver.h"
 
 FRecordedBallCollisionWorld::FRecordedBallCollisionWorld(uint32 Revision) : WorldRevision(Revision)
 {
-	Planes.Reserve(32);
+	Shapes.Reserve(32);
 }
 
-bool FRecordedBallCollisionWorld::AddPlane(FBallColliderId Id, const FVector& Point, const FVector& OutwardNormal)
+bool FRecordedBallCollisionWorld::Add(const FShapeRecord& Record)
 {
-	if (!Id.IsValid() || Point.ContainsNaN() || OutwardNormal.ContainsNaN() || !OutwardNormal.IsUnit(1.e-6)
-		|| Planes.Num() == 32 || WorldRevision == 0 || bSealed) { return false; }
-	for (const FPlaneRecord& Plane : Planes) { if (Plane.Id == Id) { return false; } }
-	Planes.Add({Id, Point, OutwardNormal});
+	if (!Record.Id.IsValid() || !Record.Material.IsValid() || Shapes.Num() == 32 || WorldRevision == 0 || bSealed)
+	{
+		return false;
+	}
+	for (const auto& Shape : Shapes)
+	{
+		if (Shape.Id == Record.Id)
+		{
+			return false;
+		}
+	}
+	Shapes.Add(Record);
 	return true;
 }
 
-EBallQueryResult FRecordedBallCollisionWorld::SweepSphere(const FBallCollisionQuery& Query, FBallContact& OutContact) const
+bool FRecordedBallCollisionWorld::AddPlane(FBallColliderId Id, const FVector& Point, const FVector& Normal,
+										   FBallSurfaceMaterial Material)
 {
-	if (WorldRevision == 0 || Query.Start.ContainsNaN() || Query.End.ContainsNaN()
-		|| !FMath::IsFinite(Query.Radius) || Query.Radius <= 0 || !Query.Time.IsValid()
-		|| !FMath::IsFinite(Query.EndFraction) || Query.EndFraction <= Query.Time.Fraction || Query.EndFraction > 1)
-	{ return EBallQueryResult::InvalidQuery; }
-	bSealed = true; // Geometry cannot change underneath already recorded inputs with the same revision.
-	bool bFound = false;
-	FBallContact Best;
-	Best.TimeOfImpact = 2;
-	for (const FPlaneRecord& Plane : Planes)
+	return !Point.ContainsNaN() && !Normal.ContainsNaN() && Normal.IsUnit(1.e-6) &&
+		   Add({Id, Point, Normal, 0, 0, Material});
+}
+
+bool FRecordedBallCollisionWorld::AddSphere(FBallColliderId Id, const FVector& Center, double Radius,
+											FBallSurfaceMaterial Material)
+{
+	return !Center.ContainsNaN() && FMath::IsFinite(Radius) && Radius > 0 &&
+		   Add({Id, Center, FVector::ZeroVector, Radius, 1, Material});
+}
+
+bool FRecordedBallCollisionWorld::AddBox(FBallColliderId Id, const FVector& Minimum, const FVector& Maximum,
+										 FBallSurfaceMaterial Material)
+{
+	return !Minimum.ContainsNaN() && !Maximum.ContainsNaN() && Minimum.X < Maximum.X && Minimum.Y < Maximum.Y &&
+		   Minimum.Z < Maximum.Z && Add({Id, Minimum, Maximum, 0, 2, Material});
+}
+
+EBallQueryResult FRecordedBallCollisionWorld::SweepSphere(const FBallCollisionQuery& Query,
+														  FBallContact& OutContact) const
+{
+	FBallContactBatch Batch;
+	const auto Result = GatherContacts(Query, Batch);
+	if (Result == EBallQueryResult::Contact)
 	{
-		const double StartDistance = FVector::DotProduct(Query.Start - Plane.Point, Plane.Normal) - Query.Radius;
-		const double EndDistance = FVector::DotProduct(Query.End - Plane.Point, Plane.Normal) - Query.Radius;
-		if (!FMath::IsFinite(StartDistance) || !FMath::IsFinite(EndDistance)) { return EBallQueryResult::InvalidQuery; }
-		if (StartDistance > 0 && EndDistance > 0) { continue; }
-		if (StartDistance >= 0 && EndDistance >= StartDistance) { continue; }
-		const double Time = StartDistance <= 0 ? 0 : StartDistance / (StartDistance - EndDistance);
-		if (!bFound || Time < Best.TimeOfImpact || (Time == Best.TimeOfImpact && Plane.Id.Value < Best.Collider.Value))
+		OutContact = Batch.Contacts[0];
+	}
+	return Result;
+}
+
+EBallQueryResult FRecordedBallCollisionWorld::GatherContacts(const FBallCollisionQuery& Q,
+															 FBallContactBatch& Output) const
+{
+	Output.Count = 0;
+	if (WorldRevision == 0 || Q.Start.ContainsNaN() || Q.End.ContainsNaN() || !FMath::IsFinite(Q.Radius) ||
+		Q.Radius <= 0 || !Q.Time.IsValid() || !FMath::IsFinite(Q.EndFraction) || Q.EndFraction <= Q.Time.Fraction ||
+		Q.EndFraction > 1 || !FMath::IsFinite(Q.ProbeDistance) || Q.ProbeDistance < 0 ||
+		!FMath::IsFinite(Q.SpatialTolerance) || Q.SpatialTolerance < 0)
+	{
+		return EBallQueryResult::InvalidQuery;
+	}
+	bSealed = true;
+	for (const auto& Shape : Shapes)
+	{
+		FBallContact C;
+		C.Collider = Shape.Id;
+		C.Material = Shape.Material;
+		bool bHit = false;
+		if (Shape.Shape == 0)
 		{
-			bFound = true;
-			Best.Collider = Plane.Id;
-			Best.TimeOfImpact = Time;
-			Best.Normal = Plane.Normal;
-			Best.Position = FMath::Lerp(Query.Start, Query.End, Time) - Plane.Normal * Query.Radius;
-			Best.PenetrationDepth = FMath::Max(0.0, -StartDistance);
+			C.Normal = Shape.B;
+			const double Start = FVector::DotProduct(Q.Start - Shape.A, C.Normal) - Q.Radius;
+			const double End = FVector::DotProduct(Q.End - Shape.A, C.Normal) - Q.Radius;
+			C.Separation = Start;
+			if (Q.bProximity)
+			{
+				bHit = Start <= Q.ProbeDistance;
+			}
+			else if (Start < -Q.SpatialTolerance || (Start <= Q.SpatialTolerance && End < Start - 1.e-10))
+			{
+				bHit = true;
+			}
+			else if (Start > 0 && End <= 0)
+			{
+				bHit = true;
+				C.TimeOfImpact = Start / (Start - End);
+				C.Separation = 0;
+			}
+			C.PenetrationDepth = C.TimeOfImpact == 0 ? FMath::Max(0.0, -Start) : 0;
+			C.Position = FMath::Lerp(Q.Start, Q.End, C.TimeOfImpact) - C.Normal * (Q.Radius + C.Separation);
+		}
+		else if (Shape.Shape == 1)
+		{
+			bHit = FBallCollisionSolver::SweepSphere(Q, Shape.A, Shape.Radius, C);
+		}
+		else
+		{
+			bHit = FBallCollisionSolver::SweepBox(Q, Shape.A, Shape.B, C);
+		}
+		if (bHit && !Output.Add(C, Q))
+		{
+			return EBallQueryResult::CapacityExceeded;
 		}
 	}
-	if (bFound) { OutContact = Best; }
-	return bFound ? EBallQueryResult::Contact : EBallQueryResult::Clear;
+	Output.Sort();
+	return Output.Count > 0 ? EBallQueryResult::Contact : EBallQueryResult::Clear;
 }

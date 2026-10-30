@@ -1,11 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Ball/BallPhysicsConfig.h"
 
 namespace BallLimits
 {
 	inline constexpr int32 Contacts = 8;
 	inline constexpr int32 ForceProviders = 4;
+	inline constexpr int32 StepEvents = 64;
 }
 
 struct FOURSQUAREVR_API FBallIdentity
@@ -35,17 +37,18 @@ struct FOURSQUAREVR_API FBallFrameTime
 };
 
 enum class EBallActivityState : uint8 { Active, Resting };
-enum class EBallContactCategory : uint8 { Court, Wall, Hand, Kinematic };
+enum class EBallContactCategory : uint8 { Court, Wall, Hand, Kinematic, Environment };
 enum class EBallStepResult : uint8
 {
 	Success, InvalidConfiguration, InvalidState, InvalidInputs, IncompatibleEnvironment,
-	SubdivisionLimit, QueryFailure, ContactSolverRequired, NumericFailure
+	SubdivisionLimit, QueryFailure, ContactSolverRequired, NumericFailure, CollisionLimit, ContactCapacity, PenetrationFailure
 };
 
 /** Persistent contact episode/manifold data; it is part of checkpoints, not cosmetic event history. */
 struct FOURSQUAREVR_API FBallContactState
 {
 	FBallColliderId Collider;
+	uint32 FeatureId = 0;
 	uint32 Episode = 0;
 	uint64 LastImpactFrame = 0;
 	FVector Normal = FVector::UpVector;
@@ -119,18 +122,42 @@ struct FOURSQUAREVR_API FBallStepInputs
 struct FOURSQUAREVR_API FBallContact
 {
 	FBallColliderId Collider;
-	EBallContactCategory Category = EBallContactCategory::Court;
+	uint32 FeatureId = 0;
+	FBallSurfaceMaterial Material;
+	EBallContactCategory Category = EBallContactCategory::Environment;
 	double TimeOfImpact = 0; // Normalized within this query's drift interval.
 	FVector Position = FVector::ZeroVector;
 	FVector Normal = FVector::UpVector; // Obstacle -> ball.
 	FVector SurfaceVelocity = FVector::ZeroVector;
 	double PenetrationDepth = 0;
+	double Separation = 0;
+};
+
+struct FOURSQUAREVR_API FBallCollisionEvent
+{
+	FBallIdentity Ball;
+	EBallContactCategory Category = EBallContactCategory::Environment;
+	FBallFrameTime Time;
+	FBallColliderId Collider;
+	uint32 FeatureId = 0;
+	uint32 Episode = 0;
+	uint32 Ordinal = 0;
+	FVector Position = FVector::ZeroVector;
+	FVector Normal = FVector::UpVector;
+	FVector IncomingVelocity = FVector::ZeroVector;
+	FVector OutgoingVelocity = FVector::ZeroVector;
+	FVector IncomingAngularVelocity = FVector::ZeroVector;
+	FVector OutgoingAngularVelocity = FVector::ZeroVector;
+	double NormalImpulse = 0;
 };
 
 struct FOURSQUAREVR_API FBallStepDiagnostics
 {
 	uint32 Microintervals = 0;
 	uint32 Queries = 0;
+	uint32 CollisionIterations = 0;
+	uint32 PenetrationCorrections = 0;
+	uint32 RestitutionFallbacks = 0;
 	double DurationMicroseconds = 0;
 };
 
@@ -139,5 +166,7 @@ struct FOURSQUAREVR_API FBallStepOutput
 	EBallStepResult Result = EBallStepResult::InvalidInputs;
 	FBallStepDiagnostics Diagnostics;
 	int32 ContactCount = 0;
-	FBallContact Contacts[BallLimits::Contacts];
+	FBallContact Contacts[BallLimits::StepEvents];
+	int32 EventCount = 0;
+	FBallCollisionEvent Events[BallLimits::StepEvents];
 };

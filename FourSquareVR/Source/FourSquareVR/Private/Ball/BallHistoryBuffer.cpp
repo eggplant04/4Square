@@ -27,17 +27,23 @@ bool FBallHistoryBuffer::Reset(const FBallIdentity& Identity)
 
 EBallHistoryWrite FBallHistoryBuffer::Push(const FBallHistoryFrame& Frame)
 {
-	const auto Reject = [&](EBallHistoryWrite Reason) { ++RejectedWrites; return Reason; };
-	if (Slots.Num() < 2 || !Frame.IsValid()) { return Reject(EBallHistoryWrite::InvalidFrame); }
-	if (Frame.State.Identity != ActiveIdentity) { return Reject(EBallHistoryWrite::WrongIdentity); }
+	const auto Check = CanPush(Frame);
+	if (Check != EBallHistoryWrite::Stored) { ++RejectedWrites; return Check; }
 	const uint64 Number = Frame.State.SimulationFrame;
-	if (Count > 0 && Number != Newest + 1) { return Reject(EBallHistoryWrite::NonContiguous); }
-	if (Count == Slots.Num() && bPinned && Oldest >= PinnedFrom) { return Reject(EBallHistoryWrite::PinnedCapacity); }
 	Slots[Number % Slots.Num()] = Frame;
 	if (Count == 0) { Oldest = Number; }
 	else if (Count == Slots.Num()) { ++Oldest; }
 	if (Count < Slots.Num()) { ++Count; }
 	Newest = Number;
+	return EBallHistoryWrite::Stored;
+}
+
+EBallHistoryWrite FBallHistoryBuffer::CanPush(const FBallHistoryFrame& Frame) const
+{
+	if (Slots.Num() < 2 || !Frame.IsValid()) { return EBallHistoryWrite::InvalidFrame; }
+	if (Frame.State.Identity != ActiveIdentity) { return EBallHistoryWrite::WrongIdentity; }
+	if (Count > 0 && Frame.State.SimulationFrame != Newest+1) { return EBallHistoryWrite::NonContiguous; }
+	if (Count == Slots.Num() && bPinned && Oldest >= PinnedFrom) { return EBallHistoryWrite::PinnedCapacity; }
 	return EBallHistoryWrite::Stored;
 }
 

@@ -32,6 +32,7 @@ public:
 	bool BeginRenderFrame(double ElapsedSeconds);
 	bool HasStepAvailable() const;
 	bool ConsumeCompletedStep();
+	bool PauseAuthority();
 	/** Explicit authority pause boundary: no frame advance; discarded debt is counted and timebase must increase. */
 	bool ResumeAuthority(uint32 NewTimebase);
 	/** Recovery does not pretend to have simulated skipped frames. Caller supplies an actual baseline. */

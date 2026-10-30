@@ -1,7 +1,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/EngineTypes.h"
 #include "BallPhysicsConfig.generated.h"
+
+USTRUCT(BlueprintType)
+struct FOURSQUAREVR_API FBallSurfaceMaterial
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball")
+	bool bOverride = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball", meta=(ClampMin="0", ClampMax="1"))
+	double Restitution = 0.8;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball", meta=(ClampMin="0"))
+	double Friction = 0.35;
+	bool IsValid() const { return FMath::IsFinite(Restitution) && Restitution >= 0 && Restitution <= 1 && FMath::IsFinite(Friction) && Friction >= 0; }
+};
 
 /** Tunable game values, not experimentally calibrated rubber-ball properties. Units are cm, s, kg. */
 USTRUCT(BlueprintType)
@@ -44,7 +58,22 @@ struct FOURSQUAREVR_API FBallPhysicsConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball", meta=(ClampMin="0"))
 	double SleepDwellSeconds = 0.25;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball", meta=(ClampMin="0"))
-	double MinimumImpactSpeed = 1.0;
+	double MinimumImpactSpeed = 20.0; // cm/s, restitution suppression for small contact chatter.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball", meta=(Units="s", ClampMin="0.000000001"))
+	double TOITolerance = 1.e-7;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball", meta=(ClampMin="1", ClampMax="64"))
+	int32 ManifoldIterations = 12;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball|Collision")
+	TEnumAsByte<ECollisionChannel> QueryChannel = ECC_WorldDynamic;
+	/** Optional component profile filter, not a replacement global collision profile. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball|Collision")
+	FName RequiredCollisionProfile = NAME_None;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball|Collision")
+	bool bTraceComplex = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball|Collision")
+	bool bUsePhysicalMaterials = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball|Collision", meta=(ClampMin="1", ClampMax="4096"))
+	int32 MaximumWorldCandidates = 64;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball", meta=(Units="cm", ClampMin="0.000001"))
 	double CCDTolerance = 0.01;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Ball", meta=(Units="cm", ClampMin="0.000001"))

@@ -15,6 +15,9 @@ bool FBallPhysicsConfig::IsValid() const
 		&& Nonnegative(MaximumLinearSpeed) && Nonnegative(MaximumAngularSpeed)
 		&& Nonnegative(SleepSpeed) && Nonnegative(WakeSpeed) && WakeSpeed >= SleepSpeed
 		&& Nonnegative(SleepAngularSpeed) && Nonnegative(SleepDwellSeconds) && Nonnegative(MinimumImpactSpeed)
+		&& FMath::IsFinite(TOITolerance) && TOITolerance >= 1.e-9 && TOITolerance <= 1.e-3
+		&& ManifoldIterations >= 1 && ManifoldIterations <= 64 && QueryChannel < ECC_MAX
+		&& MaximumWorldCandidates >= 1 && MaximumWorldCandidates <= 4096
 		&& FMath::IsFinite(CCDTolerance) && CCDTolerance >= 1.e-6
 		&& FMath::IsFinite(PenetrationTolerance) && PenetrationTolerance >= 1.e-6
 		&& MaximumCollisionIterations >= 1 && MaximumCollisionIterations <= 64

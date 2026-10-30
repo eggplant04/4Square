@@ -187,7 +187,7 @@ bool FBallRecordedReplayTest::RunTest(const FString& Parameters)
 	FBallState Replay = BallTests::State(999);
 	TestTrue(TEXT("Bounded replay succeeds"), Runner.Replay(History, State.Identity, 90, 120, Config, {}, World, Replay, Report) == EBallReplayResult::Success);
 	TestEqual(TEXT("Exact replay frame count"), Report.ExecutedFrames, uint32(30));
-	TestEqual(TEXT("Replay query work accounted"), Report.Queries, uint32(30));
+	TestEqual(TEXT("Replay movement and support queries accounted"), Report.Queries, uint32(90));
 	TestEqual(TEXT("Replay microinterval work accounted"), Report.Microintervals, uint32(30));
 	TestTrue(TEXT("Replay whole state equivalent"), BallTests::ExactlyEqual(State, Replay));
 	return true;
@@ -215,10 +215,16 @@ bool FBallReplayFailureTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Old/reset identity rejected"), Runner.Replay(History, Wrong, 90, 120, Config, {}, World, Destination, Report) == EBallReplayResult::MissingFrame);
 	FRecordedBallCollisionWorld ChangedWorld(2);
 	TestTrue(TEXT("Historical environment mismatch rejected"), Runner.Replay(History, State.Identity, 90, 120, Config, {}, ChangedWorld, Destination, Report) == EBallReplayResult::IncompatibleConfiguration);
-	// Same versioned fixture with a blocking plane forces a mid-replay transactional failure.
-	FRecordedBallCollisionWorld Blocking;
-	Blocking.AddPlane({1, 1}, FVector(0, 0, -300), FVector::UpVector);
-	TestTrue(TEXT("Unsupported collision fails replay"), Runner.Replay(History, State.Identity, 90, 120, Config, {}, Blocking, Destination, Report) == EBallReplayResult::SimulationFailed);
+	// Inject a query failure after several real steps; collisions are now supported, not a failure fixture.
+	class FFaultWorld final : public IBallCollisionWorld
+	{
+	public:
+		virtual uint32 GetRevision() const override { return 1; }
+		virtual EBallQueryResult SweepSphere(const FBallCollisionQuery& Q, FBallContact&) const override
+		{ return !Q.bProximity && Q.Time.Frame >= 95 ? EBallQueryResult::InvalidQuery : EBallQueryResult::Clear; }
+	} Fault;
+	TestTrue(TEXT("Mid-replay query fault fails atomically"), Runner.Replay(History, State.Identity, 90, 120, Config, {}, Fault, Destination, Report) == EBallReplayResult::SimulationFailed);
+	TestEqual(TEXT("Failure occurs after five completed frames"), Report.ExecutedFrames, uint32(5));
 	TestTrue(TEXT("No failed replay ever modified destination"), BallTests::ExactlyEqual(Destination, Before));
 	TestEqual(TEXT("Source history not rewritten"), History.Num(), 120);
 	TestEqual(TEXT("Every failed request instrumented"), Runner.GetPerformanceCounters().FailedReplays, uint64(6));

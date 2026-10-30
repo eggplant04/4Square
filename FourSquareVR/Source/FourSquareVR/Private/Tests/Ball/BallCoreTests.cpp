@@ -283,7 +283,7 @@ bool FBallSubdivisionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallAnalyticQueryTest, "FourSquareVR.Ball.Core.AnalyticQueryAndUnsupportedContact", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallAnalyticQueryTest, "FourSquareVR.Ball.Core.AnalyticQueryAndContactResponse", Flags)
 bool FBallAnalyticQueryTest::RunTest(const FString& Parameters)
 {
 	FRecordedBallCollisionWorld World;
@@ -305,12 +305,12 @@ bool FBallAnalyticQueryTest::RunTest(const FString& Parameters)
 	FBallState State = BallTests::State();
 	State.Position.Z = 10;
 	State.LinearVelocity.Z = -2400;
-	const FBallState Before = State;
 	FBallSimulator Simulator;
 	FBallStepOutput Output;
-	TestTrue(TEXT("Stage 3 response explicitly required"), Simulator.SimulateStep(State, BallTests::Inputs(State), Config, World, Output) == EBallStepResult::ContactSolverRequired);
-	TestTrue(TEXT("No silent tunnelling or partial movement"), BallTests::ExactlyEqual(State, Before));
-	TestEqual(TEXT("Contact returned for diagnostics"), Output.ContactCount, 1);
+	TestTrue(TEXT("Stage 3 resolves simultaneous planes"), Simulator.SimulateStep(State, BallTests::Inputs(State), Config, World, Output) == EBallStepResult::Success);
+	TestTrue(TEXT("Bounce velocity, without doubling the impulse"), FMath::IsNearlyEqual(State.LinearVelocity.Z, 1920.0, 1.e-7));
+	TestTrue(TEXT("Remaining time integrated; coplanar skin not doubled"), FMath::IsNearlyEqual(State.Position.Z, 13.4+Config.PenetrationTolerance, 1.e-7));
+	TestEqual(TEXT("Both contact records retained"), Output.ContactCount, 2);
 	return true;
 }
 
@@ -330,7 +330,7 @@ bool FBallInstrumentationTest::RunTest(const FString& Parameters)
 	const FBallPerformanceCounters& Counters = Simulator.GetPerformanceCounters();
 	TestEqual(TEXT("Every attempted step counted"), Counters.Steps, uint64(3));
 	TestEqual(TEXT("Failures separate"), Counters.FailedSteps, uint64(1));
-	TestEqual(TEXT("Queries counted"), Counters.Queries, uint64(2));
+	TestEqual(TEXT("Proximity and movement queries counted"), Counters.Queries, uint64(6));
 	TestTrue(TEXT("Measured elapsed time finite"), FMath::IsFinite(Counters.TotalStepMicroseconds) && Counters.TotalStepMicroseconds >= 0);
 	return true;
 }
@@ -372,15 +372,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallPersistentStateAndQueryFailureTest, "FourS
 bool FBallPersistentStateAndQueryFailureTest::RunTest(const FString& Parameters)
 {
 	FBallState State = BallTests::RichState();
-	const FBallState Before = State;
 	FBallPhysicsConfig Config;
 	Config.Version = State.ConfigVersion;
 	FRecordedBallCollisionWorld World(State.EnvironmentRevision);
 	FBallSimulator Simulator;
 	FBallStepOutput Output;
-	TestTrue(TEXT("Persistent state never silently discarded by free-flight foundation"),
-		Simulator.SimulateStep(State, BallTests::Inputs(State), Config, World, Output) == EBallStepResult::ContactSolverRequired);
-	TestTrue(TEXT("All cached support/contact/provider data preserved"), BallTests::ExactlyEqual(State, Before));
+	TestTrue(TEXT("Support is revalidated by current collision world"),
+		Simulator.SimulateStep(State, BallTests::Inputs(State), Config, World, Output) == EBallStepResult::Success);
+	TestTrue(TEXT("Unsupported sleeping state wakes"), State.Activity == EBallActivityState::Active && !State.bHasSupport);
+	TestEqual(TEXT("Force-provider counter is not discarded"), State.ForceStates[3].Counter, uint64(53));
+	State.Activity = EBallActivityState::Resting;
 	State.bHasSupport = false;
 	TestFalse(TEXT("Resting without support is invalid"), State.IsValid());
 	class FQueryFault final : public IBallCollisionWorld

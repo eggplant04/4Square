@@ -18,7 +18,7 @@ namespace
 		if (Ar.IsLoading()) { Value = Encoded != 0; }
 		return !Ar.IsError();
 	}
-	bool Fields(FArchive& Ar, FBallState& State)
+	bool Fields(FArchive& Ar, FBallState& State, uint16 Version)
 	{
 		Ar << State.Identity.Epoch << State.Identity.BallId << State.Identity.Generation << State.SimulationFrame;
 		Ar << State.ConfigVersion << State.MaterialVersion << State.EnvironmentRevision;
@@ -39,6 +39,7 @@ namespace
 		{
 			FBallContactState& Contact = State.Contacts[I];
 			Collider(Ar, Contact.Collider);
+			if (Version >= 2) { Ar << Contact.FeatureId; }
 			Ar << Contact.Episode << Contact.LastImpactFrame;
 			Vector(Ar, Contact.Normal);
 			Vector(Ar, Contact.ContactPoint);
@@ -66,7 +67,7 @@ bool FBallStateCodec::Save(const FBallState& State, TArray<uint8>& OutBytes)
 	FMemoryWriter PayloadWriter(Payload, true);
 	PayloadWriter.SetByteSwapping(!PLATFORM_LITTLE_ENDIAN);
 	FBallState Copy = State;
-	if (!Fields(PayloadWriter, Copy) || Payload.Num() + HeaderBytes > MaximumEncodedBytes) { return false; }
+	if (!Fields(PayloadWriter, Copy, FormatVersion) || Payload.Num() + HeaderBytes > MaximumEncodedBytes) { return false; }
 	TArray<uint8> Encoded;
 	Encoded.Reserve(HeaderBytes + Payload.Num());
 	FMemoryWriter Writer(Encoded, true);
@@ -93,11 +94,11 @@ bool FBallStateCodec::Load(TConstArrayView<uint8> Bytes, FBallState& OutState)
 	uint32 FileMagic = 0, Size = 0, CRC = 0;
 	uint16 Version = 0;
 	Reader << FileMagic << Version << Size << CRC;
-	if (Reader.IsError() || FileMagic != Magic || Version != FormatVersion
+	if (Reader.IsError() || FileMagic != Magic || (Version != 1 && Version != FormatVersion)
 		|| Size != static_cast<uint32>(Bytes.Num() - HeaderBytes)
 		|| CRC != FCrc::MemCrc32(Bytes.GetData() + HeaderBytes, Size)) { return false; }
 	FBallState Candidate;
-	if (!Fields(Reader, Candidate) || !Reader.AtEnd() || !Candidate.IsValid()) { return false; }
+	if (!Fields(Reader, Candidate, Version) || !Reader.AtEnd() || !Candidate.IsValid()) { return false; }
 	OutState = Candidate;
 	return true;
 }

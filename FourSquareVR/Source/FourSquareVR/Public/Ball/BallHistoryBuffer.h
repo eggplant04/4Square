@@ -19,6 +19,7 @@ public:
 	bool Initialize(int32 Capacity, const FBallIdentity& Identity);
 	bool Reset(const FBallIdentity& Identity);
 	EBallHistoryWrite Push(const FBallHistoryFrame& Frame);
+	EBallHistoryWrite CanPush(const FBallHistoryFrame& Frame) const;
 	bool CopyFrame(uint64 Frame, const FBallIdentity& Identity, FBallHistoryFrame& OutFrame) const;
 	bool PinFromFrame(uint64 Frame);
 	void Unpin() { bPinned = false; }

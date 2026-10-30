@@ -1,198 +1,197 @@
 # Multiplayer VR Handball: development progress
 
-Last updated: 30 October 2026, Australia/Sydney.
+Last updated: 30 October 2026, Australia/Sydney. Workspace: S:/Github/4Square/FourSquareVR.
 
 ## Current stage and approval state
 
-**Stage 2 complete within its approved foundation scope. Build succeeded; 23 Automation tests executed and passed. Stopped for user review.**
+**Stage 3 C++ implementation, UE 5.6.1 Editor build and automated verification are complete. Final result: 52 passed, 0 failed, 0 test warnings, 0 not run. Rendered Editor placement/PIE acceptance remains manual and unverified. Stop here for user review. Stages 4-9 are not approved or started.**
 
-Architecture and Stage 2 were explicitly approved with configurable finality, early performance evidence, and Git investigation requirements. **Stages 3-9 are not authorized and have not started.**
+At the beginning of every following session read in full, in order:
 
-At the beginning of each following session read, in order:
+1. BALL_SYSTEM_SPEC.md.
+2. BALL_IMPLEMENTATION_PLAN.md.
+3. BALL_PROGRESS.md.
 
-1. `BALL_SYSTEM_SPEC.md` in full.
-2. `BALL_IMPLEMENTATION_PLAN.md`.
-3. This progress file.
+The specification remains the requirements source of truth; its SHA-256 is unchanged: 3C37DC3C28F1E0474BED79F1A327AB333404A55201797F670238C8707948CE79. The user's explicit stage gates override automatic continuation instructions in the specification.
 
-The specification remains the requirements source of truth. Its SHA-256 remains `3C37DC3C28F1E0474BED79F1A327AB333404A55201797F670238C8707948CE79`. It was not edited. The user's stage approval boundaries override instructions in the specification to continue automatically.
+## Entry verification and version control
 
-## Completed functionality
+Before any Stage 3 source edits, reread all three documents, inspected the Stage 2 source/configuration and verified a clean working tree at user-created commit abda108 (stage 2 checkpoint). The installed UE 5.6.1 Editor target built successfully and all 23 Stage 2 tests passed again.
 
-- Blueprint-editable, validated physics configuration with documented units and separate configurable history/revision settings. Defaults target 120 Hz and a 250 ms revisable tail; increasing the window must also fit replay/history capacities.
-- Boundary state semantics: State(F) is the start of fixed frame F. Full state contains epoch/ball/generation, config/material/environment versions, position/velocity, rotation/angular velocity, sleep/support, contact episodes/impulse caches, force-provider records, deterministic seed and event ordinal.
-- Complete state copy/restore and lossless explicit-field checkpoint serialization. Versioned little-endian format, CRC, bounds, count/finite/rotation validation and transactional failure. No raw struct padding or UObject references. All live fields round-trip; inactive fixed-array slots are not meaningful state.
-- Fixed accumulator clock with zero/multiple steps, per-render-frame catch-up limit, retained fractional time/debt, frame/timebase indexing and diagnostics. Server overload pauses explicitly; client overload requests a baseline. Recovery records explicitly discarded pause debt and does not fabricate simulated frames.
-- Pure C++ numerical foundations: stable exponential linear/angular damping, semi-implicit force kick/drift, quaternion integration, optional designer speed limits, ordered recorded acceleration inputs and acceleration-based bounded microintervals.
-- Collision-world interface and a bounded analytic half-space query fixture. Geometry becomes sealed on its first query. Collision facts are separate from movement response.
-- Simulator transactions preserve the entire destination on query/numeric/capacity/version failures. Stage 2 explicitly returns ContactSolverRequired for colliding/resting/support/manifold states; it does not pretend Stage 3 collision response exists.
-- Preallocated circular state/input history with exact identity/frame checks, contiguous writes, wrap handling, owned copies, generation reset and explicit pin protection against eviction of replay dependencies.
-- Bounded, transactional replay runner that restores a complete checkpoint, validates dependencies and resimulates recorded numeric inputs. This is a foundation/feasibility primitive, **not server lag compensation, hit adjudication, networking, or the Stage 7 rollback manager**.
-- Step/replay CPU trace scopes, elapsed timing and work counters; history memory/occupancy APIs and benchmark evidence. No automatic hot-path buffer growth.
-- Finality eligibility calculation and modular packet-sequence comparison. This is not a final event ledger or scoring implementation.
-- 23 real Unreal Automation tests covering the Stage 2 acceptance cases and validation regressions.
+Baseline evidence: Saved/Logs/BallStage3/BaselineBuild.log, BaselineTests.log and Saved/Automation/BallStage3/Baseline/index.json.
 
-The existing VR Pawn, maps, Blueprint assets, Steam configuration, Advanced Sessions source, Build.cs and target files were not modified. No ball Actor or network/hand component was introduced.
+Git is usable. The repository root is S:/Github/4Square, above the writable project directory. Ordinary sandboxed discovery cannot chdir into that parent; approved read-only commands outside the sandbox succeed. Stage 3 used status, log and diff inspection only: no staging, commits, checkout, reset, clean, branch creation or other Git mutations. Current changes are uncommitted tracked edits and new source files, as listed below. Generated Binaries, Intermediate and Saved output remains ignored.
 
-## Finality and future scoring/elimination contract
+The existing Blueprint VR Pawn, motion controllers, VRTemplateMap, project/target configuration, Steam configuration and session plugins were preserved. The only dependency change is private PhysicsCore in Build.cs for read-only physical-material metadata. Ball simulation never uses a Chaos rigid body.
 
-RevisionWindowSeconds is configurable (default 0.25 s), rounded conservatively to fixed frames. History retention is longer than the accepted compensation window. Eligibility calculations avoid unsigned underflow at match startup and reject incompatible capacities.
+Final audit: Git diff --check passed with Windows CR line endings recognized; a separate source/document whitespace scan found zero issues. There are 52 Automation declarations matching the final report. Read-only diff/name inspection found no tracked paths outside the documented source/build/planning scope and no retained new Content assets. The specification hash was rechecked unchanged.
 
-Immediate predicted motion/audio/haptics remain the approved later-stage design. Irreversible double-bounce, out-of-bounds, last-hitter consequences, scoring, elimination, promotion, serve and round-reset decisions must wait for committed canonical events. An immediate tentative UI must support retraction. Do not eliminate a player or reset the rally from a provisional bounce: a late validated strike can remove or replace it.
+## Completed Stage 3 functionality
 
-The finality eligibility helper alone is insufficient to commit an event. The future coordinator/ledger must also account for admitted pending replay, pauses and boundaries, and keep commitment monotonic. Actual perceived scoring delay can exceed the configured window due to input cushion, pending work or network delivery. Changing the window requires a versioned timeline/config boundary and cannot reopen already committed history. None of the future prediction/event/scoring delivery behavior is claimed implemented in Stage 2.
+- Custom sphere CCD against a sealed analytic plane/sphere/rounded-box world and an Unreal static-world query adapter. Sphere/relative-sphere TOI uses a stable quadratic root; rounded boxes test faces, finite edge cylinders and vertices instead of treating the expanded AABB as exact geometry.
+- Swept time-of-impact movement, quaternion drift to impact, response, minimum-translation separation, and continued simulation of the entire remaining interval. Acceleration microintervals remain inside the same configured fixed timestep; rendering FPS never changes dt.
+- Simultaneous and near-simultaneous manifolds in stable collider/generation/feature order. A proximity query at impact includes previously tangential/supporting faces that become constraining after another impulse.
+- A bounded normal-contact active-set solve: at most 92 nonempty subsets with one, two or three independent normals in 3D, plus the empty set. This solves acute corners without relying on slow sequential normal convergence. The same projection computes minimum separation and support reactions.
+- Solid-sphere mass/inertia response, restitution, iterative Coulomb friction with angular impulse, final cone/non-penetration feasibility, low-speed restitution suppression, rolling/spin damping on balanced support and support-aware dwell/sleep/wake.
+- Passive static collision energy checks. If coupled restitution/friction targets would add kinetic energy or cannot converge feasibly, retry that manifold inelastically, with an exposed RestitutionFallbacks diagnostic; fail transactionally if it still cannot be solved. This deliberately sacrifices corner elasticity to preserve passivity.
+- Initial-overlap recovery, separating/tangent filtering, bounded zero-time contact processing, exact failure on impossible gaps, contact/candidate/iteration limits, and unchanged complete state with no partially published events on failure.
+- Native placeable AHandballBall: non-simulating, collision-disabled proxy and mesh, configurable physics/history settings, initial velocity/spin, launch/reset/state/config APIs and debug drawing. Scene transforms only display simulator output. Actor scale is normalized; tune Physics.Radius instead.
+- UBallSimulationSubsystem with a real TG_PostPhysics tick function, one shared accumulator clock, maximum 16 registered balls, transactional prepare/commit across all registered balls and preflighted history writes. Simulation faults pause the timeline. Explicit environment rebuild creates a new revision/generation/history/timebase boundary.
+- Native ABallTestCourt containing a floor, four walls and optional ceiling, with ordinary static engine collision. No binary map or Blueprint was retained.
+- FUnrealBallCollisionWorld: static-mobility colliders, response-channel/profile filters, stable canonical-path IDs, geometry/material/filter fingerprints, optional component physical materials, reused query storage and explicit invalidation. Static mobility is supported across object types; movable/simulating objects and BallIgnore-tagged components are excluded.
+- Engine queries use multi-object sweeps, which UE 5.6.1 prefilters as touches to gather matching hits without a first-blocker cutoff. Earliest TOI selection and response remain custom. Compound-component corner testing verifies that two subshape normals are returned.
+- Complete checkpoint format 2 adds feature IDs and still reads format 1, defaulting feature IDs to zero. Full state/input history, owned-copy semantics, pinned capacity, event ordinals and exact same-process collision replay remain intact.
+- Raw collision facts include ball identity, category, frame/fraction, collider/feature, episode/ordinal, contact point/normal, pre/post linear/angular velocities and normal impulse. They are provisional simulation output, not committed scoring/elimination callbacks.
+- CPU trace scopes, per-step query/microinterval/collision/penetration/fallback counters, replay counters, actual allocated history/cache sizes, ball/velocity/contact-normal debug drawing and four-speed engine replay benchmarks.
 
-## Git investigation and change audit
-
-Completed **before gameplay source edits**:
-
-- Ordinary sandboxed Git discovery failed because it cannot chdir into the parent repository.
-- Approved read-only commands outside the sandbox succeeded: repository root is S:/Github/4Square; current commit is 46fd8e6 INIT WITH VR PLUGIN.
-- Tracked source/configuration were clean at entry; BALL_SYSTEM_SPEC.md, BALL_IMPLEMENTATION_PLAN.md and BALL_PROGRESS.md were untracked.
-- Final read-only git status --short --untracked-files=all, diff --check, diff --name-only and diff --stat succeeded.
-- Final status showed only those three documents and the 24 new Stage 2 source files. No tracked-file differences were reported. diff --check does not validate untracked file contents; those were separately reviewed.
-- **Version control is usable with the required parent-directory access.** No commit, staging, checkout, reset, clean, branch creation or other Git mutation was performed. Files remain untracked/uncommitted.
-- Build/test-generated Binaries, Intermediate and Saved output is ignored by the existing repository rules.
+No hand components, Pawn changes, hand pose transport, RPCs, snapshots, client prediction, gameplay event ledger or retrospective server adjudication were implemented. Actor replication remains disabled until Stage 5's complete state protocol. Stage 2's configurable 250 ms finality policy is preserved; actual event finality enforcement is Stage 7.
 
 ## Files created or modified
 
-All source paths below are relative to Source/FourSquareVR. Header/source pairs are listed explicitly by common basename; no future empty skeletons were created.
+Paths in this table are relative to Source/FourSquareVR unless a root path is stated. Paired files are explicitly named by directory and shared basename.
 
-| Files | Status and responsibility |
-|---|---|
-| Public/Ball/BallPhysicsConfig.h; Private/Ball/BallPhysicsConfig.cpp | New; reflected settings, validation, configurable finality eligibility and sequence ordering |
-| Public/Ball/BallPhysicsTypes.h; Private/Ball/BallPhysicsTypes.cpp | New; identities, boundary/contact/provider state, frame/input/output/query-contact values and validation |
-| Public/Ball/BallDiagnostics.h; Private/Ball/BallDiagnostics.cpp | New; dedicated log category and bounded cost/work aggregation |
-| Public/Ball/BallSimulationClock.h; Private/Ball/BallSimulationClock.cpp | New; accumulator, limits, pause/baseline recovery and timebase diagnostics |
-| Public/Ball/BallCollisionWorld.h | New; pure query interface and explicit query result |
-| Public/Ball/RecordedBallCollisionWorld.h; Private/Ball/RecordedBallCollisionWorld.cpp | New; bounded/sealed analytic plane query fixture |
-| Public/Ball/BallIntegrator.h; Private/Ball/BallIntegrator.cpp | New; force kick/damping, optional clamps, drift/angular integration |
-| Public/Ball/BallSimulator.h; Private/Ball/BallSimulator.cpp | New; transactional fixed-step free-flight orchestration and explicit unsupported-contact result |
-| Public/Ball/BallStateCodec.h; Private/Ball/BallStateCodec.cpp | New; bounded/versioned/checksummed complete checkpoint persistence |
-| Public/Ball/BallHistoryBuffer.h; Private/Ball/BallHistoryBuffer.cpp | New; complete state/input ring and dependency pinning |
-| Public/Ball/BallReplayRunner.h; Private/Ball/BallReplayRunner.cpp | New; bounded preflight/restore/replay and reports |
-| Private/Tests/Ball/BallTestFixtures.h | New; rich persistent-state and recorded-input fixtures |
-| Private/Tests/Ball/BallCoreTests.cpp | New; 15 Core Automation cases |
-| Private/Tests/Ball/BallHistoryTests.cpp | New; 8 History Automation cases |
-| BALL_IMPLEMENTATION_PLAN.md (project root) | Updated approval/status, actual Stage 2 type/layout details, scoring consequences, early measurements and Git findings |
-| BALL_PROGRESS.md (project root) | Updated actual implementation/build/test/continuation record |
-
-Source total: 24 new files. Project documentation changed: the two planning/progress files. The user-supplied specification is unchanged.
-
-## Compilation status and build results
-
-**Final Editor target compilation/link: succeeded with Unreal Engine 5.6.1, CL 44394996.** UHT generated the reflected configuration successfully.
-
-Environment used: bundled .NET 8.0.300, Visual Studio 2022, MSVC compiler 14.44.35215 (installed family 14.44.35207), Windows SDK 10.0.26100.0.
-
-| Attempt | Actual result | Evidence |
+| Status | Files | Responsibility |
 |---|---|---|
-| Sandboxed Build.bat launch | Failed before compilation because engine-directory access was denied by sandbox; misleading batch location error | Tool output; resolved by approved unsandboxed execution |
-| Build 01 | Failed compilation: test flags declared uint32 instead of UE 5.6 scoped EAutomationTestFlags; corrected in both test sources | Saved/Logs/BallStage2/Build01-Failed.log; exit 1; 106.99 s |
-| Build 02 | Succeeded after test flag correction; initial 20-test suite build | Saved/Logs/BallStage2/Build02-Succeeded.log; exit 0; 2.42 s |
-| Build 03 | Succeeded after final state/replay validation fixes and three additional regression tests | Saved/Logs/BallStage2/Build03-Succeeded.log; exit 0; 2.08 s |
+| New | Public/Ball/BallCollisionSolver.h; Private/Ball/BallCollisionSolver.cpp | Geometry kernels, contact projection, response, separation, support/cache |
+| New | Private/Ball/BallCollisionWorld.cpp | Validated earliest manifold construction/order |
+| New | Public/Ball/UnrealBallCollisionWorld.h; Private/Ball/UnrealBallCollisionWorld.cpp | Immutable static environment adapter, metadata, reused query storage |
+| New | Public/Ball/HandballBall.h; Private/Ball/HandballBall.cpp | Placeable Actor, complete live state/history, APIs, presentation/debug |
+| New | Public/Ball/BallSimulationSubsystem.h; Private/Ball/BallSimulationSubsystem.cpp | Shared fixed clock, native tick, bounded registration, prepare/commit and environment boundaries |
+| New | Public/Ball/BallTestCourt.h; Private/Ball/BallTestCourt.cpp | Native test-court fixture |
+| New | Private/Tests/Ball/BallCollisionTests.cpp | 17 analytic collision/response/stability cases |
+| New | Private/Tests/Ball/BallCollisionReplayTests.cpp | Collision FPS/replay/events/performance plus legacy checkpoint migration |
+| New | Private/Tests/Ball/BallWorldCollisionTests.cpp | Seven actual UWorld/Actor/court/compound/performance cases |
+| Modified | Public/Ball/BallCollisionWorld.h | Query settings, manifold facts/results and gathering interface |
+| Modified | Public/Ball/BallPhysicsConfig.h; Private/Ball/BallPhysicsConfig.cpp | Surface values, CCD/manifold/filter/material/candidate settings and validation |
+| Modified | Public/Ball/BallPhysicsTypes.h; Private/Ball/BallPhysicsTypes.cpp | Feature identity, complete events, diagnostics, validation/capacities |
+| Modified | Public/Ball/RecordedBallCollisionWorld.h; Private/Ball/RecordedBallCollisionWorld.cpp | Sealed plane/sphere/box reference geometry |
+| Modified | Private/Ball/BallSimulator.cpp | Complete transactional collision/rest/remaining-time orchestration |
+| Modified | Public/Ball/BallSimulationClock.h; Private/Ball/BallSimulationClock.cpp | Explicit fault pause with retained debt |
+| Modified | Public/Ball/BallHistoryBuffer.h; Private/Ball/BallHistoryBuffer.cpp | Non-mutating write preflight for multi-ball transactions |
+| Modified | Public/Ball/BallStateCodec.h; Private/Ball/BallStateCodec.cpp | Schema 2 and schema 1 migration |
+| Modified | Private/Tests/Ball/BallCoreTests.cpp; Private/Tests/Ball/BallHistoryTests.cpp; Private/Tests/Ball/BallTestFixtures.h | Evolve unsupported-contact assertions into real response/support tests; query accounting, transactional fault fixture and populated feature IDs |
+| Modified | FourSquareVR.Build.cs | Private PhysicsCore metadata dependency |
+| Modified | Root BALL_IMPLEMENTATION_PLAN.md; BALL_PROGRESS.md | Actual implementation, decisions, measurements, limits and continuation gate |
 
-Remaining non-blocking build warnings: MSVC 14.44 is not UE's preferred 14.38; existing target uses backward-compatible Unreal5_3 include order. Targets/toolchain were not altered to suppress these warnings.
+Total: 14 new source files, 18 modified source/build files and two updated documents. No Content asset remains changed. A temporary failing Editor setup script was removed; its blank map was archived under Saved, not delivered as a usable level.
 
-Exact build command (PowerShell, approved outside sandbox):
+## Compilation and actual test results
+
+Final target: FourSquareVREditor Win64 Development, installed UE 5.6.1 CL 44394996, compatible module build ID 43139311. Final compile/link succeeded, exit 0, 2.15 s incremental build. Evidence: Saved/Logs/BallStage3/BuildFinal.log. Earlier full Stage 3 builds compiled all new code/UHT types successfully.
+
+Toolchain: bundled .NET 8.0.300; VS 2022/MSVC 14.44.35215, installed family 14.44.35207; Windows SDK 10.0.26100.0. Existing non-blocking warnings remain: MSVC is newer than preferred 14.38, and the targets retain Unreal5_3 include order. No target/toolchain edits were made to suppress them.
+
+Initial Stage 3 compile errors in UHT-generated constructors (a native reference member and an incomplete unique-pointer pointee) were fixed before tests ran. These are resolved, not current build blockers.
+
+| Actual UE Automation run | Passed | Failed | Test warnings | Not run | Notes |
+|---|---:|---:|---:|---:|---|
+| Stage 3 baseline | 23 | 0 | 0 | 0 | Before source changes |
+| Run01 | 49 | 0 | 0 | 0 | Initial complete collision/engine suite |
+| Run02 | 50 | 1 | 0 | 0 | Acute-corner test exposed missing tangential constraint/slow normal convergence |
+| Run03 | 50 | 1 | 0 | 0 | Frictionless acute corner fixed; frictional closure still failed |
+| Run04 | 52 | 0 | 0 | 0 | Coupled feasibility, slope wake and speed profiling passed |
+| Final Run05 | 52 | 0 | 0 | 0 | Final source, process exit 0 |
+
+Final suite groups: Core 15, History 9, Collision 21, World 7. Reports are under Saved/Automation/BallStage3/Run01 through Run05/index.json; full logs are Saved/Logs/BallStage3/Tests01.log through Tests05.log. UE's process exit alone did NOT indicate the failed Run02/03 tests; JSON and individual entries were inspected.
+
+Executed coverage verifies analytic positions/velocities/times/normals/points, not merely hit booleans: floor/wall/ceiling at 24,000 cm/s; 0.1 cm thin box at up to 600,000 cm/s; real Unreal thin-wall sweep at 120,000 cm/s; near-tangent sphere roots and glancing/tangent planes; rounded edges/vertices; floor then wall in one 120 Hz step; simultaneous and acute corners; deep/zero-time contacts; impossible gaps and collision budgets; 1,200 frames in a valid 0.2 cm clearance channel with thousands of impacts and conserved speed; restitution/friction/inertia energy equations; 60 s analytic rest and 30 s real-world rest; force wake and a frictional slope that must roll; rendering rates 30/72/90/120/144/240 with identical full collision state; codec migration and corruption; full restore/replay with exact regenerated event identity/timing/response; real world filters, epoch invalidation, compound geometry and Actor launch/reset/config/transform projection.
+
+Tolerances: constant-velocity analytic tests generally use 1e-7 cm or tighter for positions/velocities and 1e-9 normalized TOI or tighter; near-tangent roots use 1e-10. Unreal thin-wall position tolerance is 0.005 cm, velocity 0.01 cm/s, normalized TOI 2e-6, point 0.002 cm and normal 1e-5. These qualify the tested coordinates/simple geometry, not arbitrary mesh cooks or bitwise x64/ARM equivalence.
+
+Exact build command:
+
 ```powershell
 & 'S:\Program Files\EpicGames\UE_5.6\Engine\Build\BatchFiles\Build.bat' FourSquareVREditor Win64 Development '-Project=S:\Github\4Square\FourSquareVR\FourSquareVR.uproject' -WaitMutex -NoHotReloadFromIDE
 ```
 
-## Automated tests actually executed
-
-Both runs used the compiled UE 5.6.1 Editor module in UnrealEditor-Cmd, not an external substitute or static-only check.
-
-| Run | Passed | Failed | Warnings | Not run | Process exit | Report |
-|---|---:|---:|---:|---:|---:|---|
-| Run01 | 20 | 0 | 0 | 0 | 0 | Saved/Automation/BallStage2/Run01/index.json |
-| Final Run02 | 23 | 0 | 0 | 0 | 0 | Saved/Automation/BallStage2/Run02/index.json |
-
-Final Automation report's aggregate test duration: 0.179 s, excluding editor startup/discovery. Full logs: Saved/Logs/BallStage2/Tests01.log and Tests02.log. Headless testing disabled XR/audio/Steam for the process; no project configuration was changed.
-
-Final executed tests, all under FourSquareVR.Ball:
-
-| Suite | Successful test names |
-|---|---|
-| Core | AnalyticQueryAndUnsupportedContact; ClockInvalidInput; ClockOverrunRecovery; ClockRemainderAndCatchUp; ConfigurationAndFinality; ConfigurableFixedFrequency; DampingAndAngularIntegration; Gravity; PerformanceCounters; PersistentStateAndQueryFailure; RecordedForceOrderingAndVersions; RenderingRateConsistency; SequenceWrap; SubdivisionAndFailureAtomicity; ZeroAndInvalidState |
-| History | BoundedReplayPerformance; CheckpointCorruptionAndBounds; CompleteCheckpointRoundTrip; PinnedCapacityAndGeneration; RecordedReplayAndRestoreContinue; ReplayBudgetsAndAtomicFailure; RingWrapAndInvalidFrames; ZeroLengthReplayValidation |
-
-Coverage includes specification tests 1, 2, 7, 8 and 19-23 within the Stage 2 analytic/free-flight scope. Rendering rates tested: 30/45/60/72/90/120/144/240 Hz over equal elapsed time. Separately configured fixed frequencies 60/100/240 Hz work at 90 Hz rendering. Snapshot/RPC/hand/scoring tests assigned to later stages have not been executed.
-
-Checkpoint tests populate every contact/provider slot and all support/sleep/version/seed/ordinal fields. They verify serialized restore/continue, all truncation lengths, CRC/schema/trailing bytes, semantically invalid data with recomputed CRC, count/size bounds and unchanged destination on failure. History tests cover eviction, owned-copy semantics, pinned-capacity rejection, generations, missing frames and no allocation growth. Replay tests verify recorded results, hard work caps, no partial destination/history updates, incompatible environments and even zero-step validation.
-
 Exact final test command:
+
 ```powershell
-& 'S:\Program Files\EpicGames\UE_5.6\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' 'S:\Github\4Square\FourSquareVR\FourSquareVR.uproject' -unattended -nop4 -nosplash -NullRHI -nosound -nohmd -nosteam '-ExecCmds=Automation RunTests FourSquareVR.Ball' '-TestExit=Automation Test Queue Empty' '-ReportExportPath=S:\Github\4Square\FourSquareVR\Saved\Automation\BallStage2\Run02' '-abslog=S:\Github\4Square\FourSquareVR\Saved\Logs\BallStage2\Tests02.log' -stdout -FullStdOutLogOutput
+& 'S:\Program Files\EpicGames\UE_5.6\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' 'S:\Github\4Square\FourSquareVR\FourSquareVR.uproject' -unattended -nop4 -nosplash -NullRHI -nosound -nohmd -nosteam '-ExecCmds=Automation RunTests FourSquareVR.Ball' '-TestExit=Automation Test Queue Empty' '-ReportExportPath=S:\Github\4Square\FourSquareVR\Saved\Automation\BallStage3\Run05' '-abslog=S:\Github\4Square\FourSquareVR\Saved\Logs\BallStage3\Tests05.log' -stdout -FullStdOutLogOutput
 ```
 
-Run01 used the same command with Run01 and Tests01.log paths. Verify JSON counts and process exit on reruns; process launch/compilation alone is not test success.
+These process flags disabled rendering, XR, audio and Steam only for testing; project settings were not changed.
 
-## Early performance and memory evidence
+## Measured CPU and memory; no Quest qualification
 
-Actual final PC fixture, Intel Core i5-12600K, Win64 Development Editor:
+Final Run05, Intel i5-12600K, Win64 Development Editor, NullRHI. Engine benchmark: six static court components, 512 forward frames, then 256 repetitions of the same 30-frame replay at each speed. Inputs are reproducible, not live VR/network traffic.
 
-| Measurement | Result |
+| Ball speed cm/s | Forward step median / p95 us | 30-frame replay median / p95 / max us | Impacts in replay |
+|---:|---:|---:|---:|
+| 1,000 | 10.002 / 10.200 | 374.2 / 395.2 / 555.2 | 2 |
+| 3,000 | 9.701 / 15.300 | 358.2 / 392.7 / 552.4 | 2 |
+| 10,000 | 9.798 / 16.801 | 374.4 / 413.5 / 1377.1 | 4 |
+| 32,310.99 | 10.300 / 19.401 | 422.1 / 470.1 / 629.7 | 11 |
+
+Peak broadphase candidates: two in this court. The fastest workload performed 28,672 scene queries across 256 replays (112 queries/replay). Replay timings include runner preflight/copy/validation and queries. Forward step timings are solver measurements, excluding Actor projection/copies, rendered frames and XR.
+
+Analytic six-plane collision replay, 512 x 30 frames at 16,798 cm/s: median 72.8 us, p95 74.2 us, max 102.1 us, 158 queries/replay. Empty analytic free-flight replay: mean 38.219 us, median 37.7 us, p95 38.9 us, max 86.8 us. The old Stage 2 median of 8.2 us was an earlier contact-free foundation and is not the current simulation cost. Early Run01 real-world median was about 1.4 ms; CPU scheduling/power/startup variation affects results, so these are observed samples, not real-time guarantees.
+
+| Native storage | Measured bytes |
 |---|---:|
-| sizeof(FBallState) | 1,504 bytes |
-| sizeof(FBallHistoryFrame), including copied numeric inputs | 1,760 bytes |
-| 256-frame history allocation including owner | 450,648 bytes (~440 KiB) |
-| Encoded fully populated checkpoint | 1,368 bytes |
-| Replay workload | 512 repetitions of 30 fixed frames (15,360 replay steps) |
-| Mean / median 30-frame replay | 8.306 / 8.200 microseconds |
-| p95 / maximum observed | 8.400 / 41.600 microseconds |
-| History storage growth across writes/replays | None |
-| Failed benchmark replay requests | 0 |
+| Complete FBallState | 1,504 |
+| State plus saved inputs, FBallHistoryFrame | 1,760 |
+| 256-entry history including owner | 450,648 |
+| Fully populated schema-2 checkpoint | 1,400 |
+| One step output | 25,144 |
+| Two Actor-owned output buffers | 50,288 |
+| Native AHandballBall object | 5,216 |
+| Shared static adapter cache, six-component fixture | 151,572 |
 
-CPU scopes: Handball_SimulateStep and Handball_BoundedReplay. Counters distinguish attempted/failed steps, queries, microintervals, replay attempts/failures/executed frames and measured durations. Reports expose replay query/microinterval work. GetAllocatedBytes reports actual ring allocation, not a guessed struct budget.
+History/cache allocated sizes did not grow across benchmark writes/replays. One ball's native object/output/history total is 506,152 bytes, plus the shared world cache. This excludes UObject component allocations, shared assets, engine collision/scene-query internals, future hands/network/event ledgers and rendering. Four such balls plus this cache already use about 2.08 MiB of counted storage; maximum 16 registration is a safety cap, not a qualified Quest ball count.
 
-**Limitations:** this is a free-flight fixture using an empty analytic collision world. It excludes Unreal scene queries, static contact resolution, moving palms/colliders, event revision ledgers, serialization/transport and network processing. It does not measure the complete world's memory, global allocations, real-time multiplayer, Android/ARM or Quest. No CPU/memory budget is assumed achievable on Quest from these results.
+Custom physics/history buffers do not allocate per impact. Engine multi-query internals may allocate; the reused 256-result TArray can grow before an excessive result is rejected. Do not describe the whole engine query path as allocation-free. Fingerprint validation scans registered static components repeatedly and needs larger-scene profiling/optimization before final rollback qualification.
 
-Required feasibility checkpoints before Stage 7: repeat bounded replay/memory measurement with real world collision at Stage 3, captured/multiple hands and historical dynamic geometry at Stage 4, and real network/prediction traffic at Stages 5-6. Profile an actual Quest build/device before claiming its budget passes.
+No Quest hardware, Android package, ARM profiling, thermal test, four-player workload, network traffic or replay-burst p99 qualification was performed. The plan's <=1 ms/frame, <=2 ms replay p99 and <=2 MiB targets remain unproven.
 
-## Remaining stages and manual tests
+## Manual Unreal Editor setup and outstanding acceptance
+
+No usable .umap was retained. A headless Editor Python placement attempt crashed with EXCEPTION_INT_DIVIDE_BY_ZERO in the engine/Editor ActorFactory path after saving only a blank map; the exact native cause is unresolved. A fallback runtime-spawn Python API was not exported by this UE build. Neither attempt proves rendered Editor placement works or fails in an interactive session. Logs: Saved/Logs/BallStage3/TestLevelSetup.log and TestLevelSetup02.log. The blank artifact is preserved in Saved/Automation/BallStage3/FailedEditorSetup/BallStage3TestCourt.empty.umap. The failing script was removed.
+
+Required manual setup:
+
+1. Open the project with UE 5.6.1. Create a separate empty test level; save it under a new name such as /Game/Ball/Tests/BallStage3ManualTest. Preserve VRTemplateMap.
+2. Place BallTestCourt at (0,0,0) and HandballBall at (0,0,100). The native court has floor z=0, inside walls x=+/-1000/y=+/-500 and ceiling z=1000 cm. Add lighting or use an unlit Editor viewport.
+3. On the ball set InitialLinearVelocity=(1600,300,-500), bDebugDraw=true, or use console ball.DebugDraw 1. Defaults are radius 3 cm and 120 Hz. Use Physics.Radius rather than Actor scaling.
+4. Start Simulate or standalone PIE. Verify visible floor/wall/ceiling bounces, normals, spin, rest and frame progression. During simulation select the runtime ball and exercise LaunchConfiguredBall/ResetBall, or call LaunchBall/SetBallState/SetBallPhysicsConfig from Blueprint. Buttons need an initialized playing ball; they are not an edit-mode simulator.
+5. Verify physics parameters through the runtime setter. Frequency must match the shared world frequency and cannot be changed live on one ball.
+6. Keep collision geometry static during a run. Geometry edits pause simulation. RebuildStaticEnvironment is an explicit subsystem API for a new epoch/history/generation/timebase; it is not historical rewind.
+7. Check interactive actor placement (including the prior headless failure), real tick registration/order, visible debug lifetime, material tuning, frame pacing and existing Pawn/teleport/UI/grab regression in the normal VR map.
+
+C++ UWorld/court/Actor integration was automated and passed. Rendered Editor placement/PIE, visible quality and physical headset regression were not performed. No multi-process, multi-machine Steam, VR hand, reconciliation or Quest result is claimed.
+
+## Limits and architectural concerns for the following stages
+
+- Defaults: 12 collision iterations per fixed step, up to 8 acceleration/retry microintervals, 8 simultaneous/persistent contacts, 64 facts/events per step, 64 broadphase components/query, 256 raw engine hits/query, 4,096 registered static components, 16 balls. Excess work or impossible geometry pauses/fails atomically, never discards remaining time or silently ignores a normal.
+- Nearly dependent normal systems below pivot tolerance 1e-10, excessive contacts and unsupported MTD may still fail explicitly. Iterative Coulomb friction is not an exact global maximum-dissipation solve; passive fallback can make acute corners less bouncy. Properties are tunable game values, not calibrated rubber measurements.
+- Default skin/penetration tolerance is 0.02 cm; support probes extend to 0.04 cm. Nearby constraints within skin may be activated early. Separation changes position but not velocity; potential-energy error under gravity and first-order force integration must be distinguished from the tested collision kinetic-energy inequality.
+- Sweeps are continuous along each velocity drift. Stage 2 semi-implicit force integration is retained. CCDTolerance controls acceleration subdivision/chord planning, not a universal bound on global trajectory error. No exact continuous parabolic trajectory is claimed.
+- Prefer closed simple collision. Complex triangle/open/one-sided/heightfield MTD, per-triangle physical materials and arbitrary mesh cooks are unqualified. The adapter uses component simple physical-material values and geometric-mean coefficient combination; engine material combine-mode flags are not used.
+- Static geometry is a live but immutable epoch, not a copied historical Chaos scene. Component transform/bounds/body GUID/material/filter changes, static spawns and level changes invalidate it. In-place geometry/instance edits that preserve those fingerprints must explicitly invalidate/rebuild before simulation. Old-epoch replay is refused; moving/rotating/deforming geometry requires Stage 4's recorded historical contract.
+- Same-process exact restore/event equivalence passed. Engine cooks, float query results, feature hashing near quantization boundaries and x64/ARM differences can change near-degenerate ordering. No cross-platform bitwise determinism is promised.
+- Contact cache episodes can evict inactive features. They are not a durable network duplicate-hit ledger. Stage 4/7 must add tracked-hand epochs/sample identities and the specified event revision/deduplication protocol.
+- Client clocks, hands, lag compensation, admission/rollback transactions, event commitment and presentation smoothing remain later work. Do not use SetBallState or Actor transforms as rollback; those APIs deliberately create fresh generations and clear history.
+- Immediate predicted feedback remains a Stage 6 requirement. Future scoring/elimination, round changes, rewards and irreversible callbacks must wait for the configurable revision window AND the committed frontier with no admitted replay pending. Raw Stage 3 collision events cannot trigger irreversible gameplay.
+- CPU/memory feasibility remains open until larger scenes, moving hands, latency/jitter/loss, actual multiplayer and Quest hardware are measured. No accuracy/rate/history requirement was weakened to meet a guessed budget.
+
+## Remaining work and exact next steps
 
 | Stage | Status |
 |---|---|
-| 1 inspection/architecture | Complete; architecture approved |
-| 2 foundations | Implemented, compiled, 23 tests passed; stopped for review |
-| 3 static CCD/response/rest, Actor/UWorld adapter/test court | Not started; needs approval |
-| 4 tracking/relative hand CCD/dynamic proxies/Pawn integration | Not started |
-| 5 owned RPCs/clocks/snapshots/origin/late join | Not started |
-| 6 prediction/reconciliation | Not started |
-| 7 historical server validation/resimulation/finality ledger | Not started |
-| 8 presentation/events/spin/forces/debug workflow | Not started |
-| 9 integrated network/hardware qualification | Not started |
+| 1 inspection/architecture | Complete, reviewed |
+| 2 foundations | Complete; original 23 tests and Stage 3 regressions passed |
+| 3 static physics/Actor/adapter | C++ complete, build and 52 tests passed; manual Editor acceptance above remains |
+| 4 VR tracking/hand CCD/historical dynamic proxies/Pawn integration | Not started, requires explicit approval |
+| 5 owned transport/clocks/snapshots/origin/late join | Not started |
+| 6 prediction/reconciliation/local feedback | Not started |
+| 7 historical server adjudication/resimulation/finality ledger | Not started |
+| 8 full presentation/events/advanced forces/debug workflow | Not started |
+| 9 integrated network and hardware qualification | Not started |
 
-Manual verification still required when dependent implementation exists: place/launch/reset the ball; UWorld sweep edge cases and tick order; existing Pawn regression; real palm calibration/strikes/tracking loss/recenter; visual/haptic corrections; real two-process and two-machine Steam/VR; scenarios A-I; dedicated-server and Android/Quest setup, performance and x64/ARM comparison. **None was represented as passed by the Stage 2 headless tests.**
-
-## Known limitations and unresolved decisions
-
-- No known failing Stage 2 tests. This is a standalone numerical/history foundation, not a playable ball or completed multiplayer feature.
-- State capacities are eight contacts/four persistent provider records. Histories are initialized with explicit bounded capacities; future contact/hand/event capacity exhaustion must remain explicit and tested.
-- Sleep/support/contact state is fully preserved but response/rest evolution awaits Stage 3. Contact-capacity and solver edge cases are not falsely covered by free-flight tests.
-- Only analytic planes are implemented in the recorded collision fixture. Unreal geometry, moving sphere/box CCD, historical hand input and server event ordering remain later work.
-- The future server event ledger must enforce actual finality in addition to the current eligibility calculation; speculative scoring is not authorized.
-- Mutable-tail CPU and total memory may exceed the proposed budgets after real collision/VR/network work; early measurements are a baseline, not a guarantee.
-- Existing Pawn origin/teleport authority, clock uncertainty, residual spoofing and remote pose prediction remain documented architecture risks.
-- Approximate x64/ARM reproducibility is unverified. Same-platform test equivalence does not promise bitwise determinism across platforms.
-- No catch/grab mechanics, ball-ball collision, arbitrary rotating/deforming mesh CCD or two-way Chaos coupling is claimed.
-- Source remains untracked/uncommitted. Git is usable outside the sandbox; no commits were requested/performed.
-- No major architecture change or specification conflict arose. Complete-state fields and boundaries were preserved. Helper services and consolidated files refine Stage 2 without replacing its architecture.
-
-## Exact next steps
-
-1. Read all three documents in order and check user/spec/source changes.
-2. Present/review Stage 2 results. **Do not begin Stage 3 without explicit approval.**
-3. If changes are requested to Stage 2, make only those changes, rebuild and execute affected tests, and update this record.
-4. After explicit Stage 3 approval, implement static world adapter, actual contact/remaining-time response, robust support/rest and the placeable Actor/coordinator. Replace the explicit ContactSolverRequired boundary with tested behavior; do not silently bypass it.
-5. Preserve state/codec version discipline and test full history restoration as contact state becomes active. Update plan/inventory if fields or helper boundaries change.
-6. Repeat performance instrumentation with real scene queries/contact-heavy 30-frame replay before treating rollback feasibility as established. Investigate Quest on device; do not infer feasibility from this PC fixture.
-7. Continue leaving Pawn, Steam/session plugins and unrelated configuration intact until their specifically approved integration stage.
+Next session: read all three documents, inspect user/Git changes, review the Stage 3 results and unresolved manual checks. Fix only specifically requested Stage 3 issues until the user approves Stage 4. After that approval, implement recorded VR hand input/historical collider contracts before wiring Grip components, preserve complete state and rerun collision/replay/performance regression tests. Do not automatically continue.
 
 ## Session history
 
-| Date | Result |
-|---|---|
-| 2026-10-29 | Read-only project inspection; no files changed |
-| 2026-10-29 | Full specification analysis and two planning documents; no gameplay implementation/build/tests |
-| 2026-10-29 to 2026-10-30 | Architecture/Stage 2 approved; Git access diagnosed before gameplay edits; 24 foundation/test files added; one compile failure fixed; final UE 5.6.1 build succeeded; 23 Automation tests passed; measurements/limits documented; stopped before Stage 3 |
+- 2026-10-29: read-only inspection, then complete specification/architecture planning; no gameplay edits.
+- 2026-10-29/30: Stage 2 approved; Git access diagnosed before changes; 24 foundation/test files added; UE 5.6.1 build and 23 tests passed; stopped for review.
+- 2026-10-30: Stage 3 approved; baseline reverified before edits; 14 source files added and 18 source/build files updated; acute/compound/slope issues tested and resolved; final Editor build and 52 tests passed; real static collision benchmarks recorded; headless asset attempt failed, native fixture/manual steps retained; stopped before Stage 4.
