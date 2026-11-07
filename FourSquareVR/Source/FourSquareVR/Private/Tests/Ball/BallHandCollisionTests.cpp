@@ -10,8 +10,8 @@
 
 namespace
 {
-constexpr auto Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
-FBallPhysicsConfig Config()
+constexpr auto HandCollisionFlags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
+FBallPhysicsConfig HandCollisionConfig()
 {
 	FBallPhysicsConfig C;
 	C.Gravity = FVector::ZeroVector;
@@ -53,7 +53,7 @@ EBallStepResult Step(FBallMotionFrame &F, FBallState &S, const FBallPhysicsConfi
 	FBallSimulator Sim;
 	return Sim.SimulateStep(S, MotionInputs(S), C, W, O);
 }
-FBallHandObservation Pose(double T, FVector P, uint32 Seq)
+FBallHandObservation HandCollisionPose(double T, FVector P, uint32 Seq)
 {
 	FBallHandObservation R;
 	R.CaptureSeconds = R.TimelineSeconds = T;
@@ -65,7 +65,7 @@ FBallHandObservation Pose(double T, FVector P, uint32 Seq)
 } // namespace
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandStationaryBallTest, "FourSquareVR.Ball.Hand.MovingPalmStrikesStationaryBall",
-								 Flags)
+								 HandCollisionFlags)
 bool FHandStationaryBallTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -73,7 +73,7 @@ bool FHandStationaryBallTest::RunTest(const FString &)
 	Palm(F, FVector(-20, 0, 0), FVector::ZeroVector);
 	auto S = BallTests::State();
 	FBallStepOutput O;
-	TestTrue(TEXT("Actual simulation succeeds"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Actual simulation succeeds"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("One collision event"), O.EventCount, 1);
 	TestEqual(TEXT("TOI half-step"), O.Events[0].Time.Fraction, 0.5, 1.e-9);
 	TestEqual(TEXT("Relative restitution: 2400*(1+.8)"), S.LinearVelocity.X, 4320.0, 1.e-6);
@@ -82,7 +82,7 @@ bool FHandStationaryBallTest::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandStationaryPalmTest, "FourSquareVR.Ball.Hand.MovingBallStrikesStationaryPalm",
-								 Flags)
+								 HandCollisionFlags)
 bool FHandStationaryPalmTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -91,13 +91,13 @@ bool FHandStationaryPalmTest::RunTest(const FString &)
 	auto S = BallTests::State();
 	S.LinearVelocity.X = 2400;
 	FBallStepOutput O;
-	TestTrue(TEXT("Simulation"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Simulation"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("TOI"), O.Events[0].Time.Fraction, 0.5, 1.e-9);
 	TestEqual(TEXT("Bounce speed"), S.LinearVelocity.X, -1920.0, 1.e-6);
 	TestEqual(TEXT("Bounce remaining position"), S.Position.X, 1.98, 1.e-7);
 	return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandOpposingTest, "FourSquareVR.Ball.Hand.FastOpposingMotion", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandOpposingTest, "FourSquareVR.Ball.Hand.FastOpposingMotion", HandCollisionFlags)
 bool FHandOpposingTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -107,13 +107,13 @@ bool FHandOpposingTest::RunTest(const FString &)
 	S.Position.X = -20;
 	S.LinearVelocity.X = 4800;
 	FBallStepOutput O;
-	TestTrue(TEXT("Simulation"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Simulation"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("Relative TOI"), O.Events[0].Time.Fraction, 0.5, 1.e-9);
 	TestEqual(TEXT("Relative speed response"), S.LinearVelocity.X, -8160.0, 1.e-6);
 	TestEqual(TEXT("Final position"), S.Position.X, -34.02, 1.e-7);
 	return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandGlancingTest, "FourSquareVR.Ball.Hand.AnalyticGlancingStrike", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandGlancingTest, "FourSquareVR.Ball.Hand.AnalyticGlancingStrike", HandCollisionFlags)
 bool FHandGlancingTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -123,7 +123,7 @@ bool FHandGlancingTest::RunTest(const FString &)
 	S.Position = FVector(-20, 8, 0);
 	S.LinearVelocity.X = 4800;
 	FBallStepOutput O;
-	TestTrue(TEXT("Simulation"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Simulation"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("Rounded sphere TOI"), O.Events[0].Time.Fraction, 0.35, 1.e-9);
 	TestTrue(TEXT("Correct normal"), O.Events[0].Normal.Equals(FVector(-0.6, 0.8, 0), 1.e-8));
 	TestTrue(TEXT("Normal restitution with conserved tangential component"),
@@ -131,7 +131,7 @@ bool FHandGlancingTest::RunTest(const FString &)
 	TestTrue(TEXT("Passive collision dissipates energy"), S.LinearVelocity.SizeSquared() < FMath::Square(4800.0));
 	return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandTunnelingTest, "FourSquareVR.Ball.Hand.HighSpeedRelativeTunneling", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandTunnelingTest, "FourSquareVR.Ball.Hand.HighSpeedRelativeTunneling", HandCollisionFlags)
 bool FHandTunnelingTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -141,14 +141,14 @@ bool FHandTunnelingTest::RunTest(const FString &)
 	S.Position.X = -10000;
 	S.LinearVelocity.X = 2400000;
 	FBallStepOutput O;
-	TestTrue(TEXT("Simulation"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Simulation"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("Very thin temporal contact found"), O.EventCount, 1);
 	TestEqual(TEXT("Analytic TOI"), O.Events[0].Time.Fraction, 9990.0 / 20000, 1.e-9);
 	TestEqual(TEXT("Correct speed"), S.LinearVelocity.X, -1920000.0, 1.e-5);
 	TestTrue(TEXT("Remains on incoming side"), S.Position.X < -10);
 	return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandBothTest, "FourSquareVR.Ball.Hand.BothPalmsSimultaneous", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandBothTest, "FourSquareVR.Ball.Hand.BothPalmsSimultaneous", HandCollisionFlags)
 bool FHandBothTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -157,14 +157,14 @@ bool FHandBothTest::RunTest(const FString &)
 	Palm(F, FVector(0, -20, 0), FVector::ZeroVector, EBallHandSide::Right);
 	auto S = BallTests::State();
 	FBallStepOutput O;
-	TestTrue(TEXT("Joint solve"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Joint solve"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("Two unique events"), O.EventCount, 2);
 	TestTrue(TEXT("Stable left/right ordering"), O.Events[0].Collider.Value < O.Events[1].Collider.Value);
 	TestTrue(TEXT("Both relative impulses"), S.LinearVelocity.Equals(FVector(4320, 4320, 0), 1.e-6));
 	TestTrue(TEXT("Both remaining displacements"), S.Position.Equals(FVector(18.02, 18.02, 0), 1.e-7));
 	return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandConflictTest, "FourSquareVR.Ball.Hand.ConflictingPalmsHaveBoundedPolicy", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandConflictTest, "FourSquareVR.Ball.Hand.ConflictingPalmsHaveBoundedPolicy", HandCollisionFlags)
 bool FHandConflictTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -173,14 +173,14 @@ bool FHandConflictTest::RunTest(const FString &)
 	Palm(F, FVector(20, 0, 0), FVector::ZeroVector, EBallHandSide::Right);
 	auto S = BallTests::State();
 	FBallStepOutput O;
-	TestTrue(TEXT("Infeasible kinematics do not pause world"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Infeasible kinematics do not pause world"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("Stable first collider accepted"), O.EventCount, 1);
 	TestEqual(TEXT("Conflict diagnosed"), O.Diagnostics.RejectedMotionContacts, uint32(1));
 	TestEqual(TEXT("No conflicting repeated impulses"), S.LinearVelocity.X, 4320.0, 1.e-6);
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandInitialOverlapTest,
-								 "FourSquareVR.Ball.Hand.UnknownInitialOverlapRequiresSeparation", Flags)
+								 "FourSquareVR.Ball.Hand.UnknownInitialOverlapRequiresSeparation", HandCollisionFlags)
 bool FHandInitialOverlapTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -188,13 +188,13 @@ bool FHandInitialOverlapTest::RunTest(const FString &)
 	Palm(F, FVector::ZeroVector, FVector(100, 0, 0));
 	auto S = BallTests::State();
 	FBallStepOutput O;
-	TestTrue(TEXT("Initial overlap safe"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Initial overlap safe"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("No fabricated strike"), O.EventCount, 0);
 	TestTrue(TEXT("No large depenetration/hit"), S.Position.IsZero() && S.LinearVelocity.IsZero());
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandPersistentTest,
-								 "FourSquareVR.Ball.Hand.PersistentContactDoesNotReapplyRestitution", Flags)
+								 "FourSquareVR.Ball.Hand.PersistentContactDoesNotReapplyRestitution", HandCollisionFlags)
 bool FHandPersistentTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -207,7 +207,7 @@ bool FHandPersistentTest::RunTest(const FString &)
 	S.MotionPairs[0].Episode = 1;
 	S.MotionPairs[0].EventCounterAfterImpact = 1;
 	FBallStepOutput O;
-	TestTrue(TEXT("Persistent solve"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Persistent solve"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("Inelastic sustained push"), S.LinearVelocity.X, 120.0, 1.e-7);
 	TestEqual(TEXT("No duplicate event"), O.EventCount, 0);
 	TArray<uint8> Bytes;
@@ -217,7 +217,7 @@ bool FHandPersistentTest::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandMotionKnotTest, "FourSquareVR.Ball.Hand.RecordedMotionKnotsPreserveReversal",
-								 Flags)
+								 HandCollisionFlags)
 bool FHandMotionKnotTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -236,14 +236,14 @@ bool FHandMotionKnotTest::RunTest(const FString &)
 	F.Add(C, MakeArrayView(M));
 	auto S = BallTests::State();
 	FBallStepOutput O;
-	TestTrue(TEXT("Piecewise CCD"), Step(F, S, Config(), O) == EBallStepResult::Success);
+	TestTrue(TEXT("Piecewise CCD"), Step(F, S, HandCollisionConfig(), O) == EBallStepResult::Success);
 	TestEqual(TEXT("Reversal TOI"), O.Events[0].Time.Fraction, 5.0 / 6, 1.e-9);
 	TestEqual(TEXT("Outgoing segment velocity used"), S.LinearVelocity.X, 12960.0, 1.e-6);
 	TestEqual(TEXT("Correct remainder"), S.Position.X, 18.02, 1.e-7);
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandWorldSequenceTest, "FourSquareVR.Ball.Hand.PalmAndWorldImpactWithinOneStep",
-								 Flags)
+								 HandCollisionFlags)
 bool FHandWorldSequenceTest::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -253,7 +253,7 @@ bool FHandWorldSequenceTest::RunTest(const FString &)
 	Static.AddPlane({1, 1}, FVector(20, 0, 0), FVector(-1, 0, 0));
 	auto S = BallTests::State();
 	FBallStepOutput O;
-	TestTrue(TEXT("Combined remaining-time solve"), Step(F, S, Config(), O, &Static) == EBallStepResult::Success);
+	TestTrue(TEXT("Combined remaining-time solve"), Step(F, S, HandCollisionConfig(), O, &Static) == EBallStepResult::Success);
 	TestEqual(TEXT("Palm then wall"), O.EventCount, 2);
 	TestTrue(TEXT("Event order"),
 			 O.Events[0].Category == EBallContactCategory::Hand && O.Events[1].Category != EBallContactCategory::Hand);
@@ -261,32 +261,32 @@ bool FHandWorldSequenceTest::RunTest(const FString &)
 	TestEqual(TEXT("Analytic final position including skins"), S.Position.X, 16.164, 1.e-6);
 	return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandSampleSafetyTest, "FourSquareVR.Ball.Hand.TrackingSafetyAndReacquisition", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandSampleSafetyTest, "FourSquareVR.Ball.Hand.TrackingSafetyAndReacquisition", HandCollisionFlags)
 bool FHandSampleSafetyTest::RunTest(const FString &)
 {
 	FBallHandPoseHistory H;
 	H.Initialize(8);
 	FBallHandTrackingSettings T;
 	TestTrue(TEXT("First sample warms up"),
-			 H.Add(Pose(0, FVector::ZeroVector, 1), T) == EBallTrackingRejection::WarmingUp);
+			 H.Add(HandCollisionPose(0, FVector::ZeroVector, 1), T) == EBallTrackingRejection::WarmingUp);
 	TestTrue(TEXT("Second sample continuity"),
-			 H.Add(Pose(.01, FVector(1, 0, 0), 2), T) == EBallTrackingRejection::None);
-	auto Lost = Pose(.02, FVector(2, 0, 0), 3);
+			 H.Add(HandCollisionPose(.01, FVector(1, 0, 0), 2), T) == EBallTrackingRejection::None);
+	auto Lost = HandCollisionPose(.02, FVector(2, 0, 0), 3);
 	Lost.bTracked = false;
 	TestTrue(TEXT("Tracking loss"), H.Add(Lost, T) == EBallTrackingRejection::Untracked);
 	const uint32 Generation = H.GetLatest()->Generation;
 	TestTrue(TEXT("Reacquire warms up"),
-			 H.Add(Pose(.03, FVector(300, 0, 0), 4), T) == EBallTrackingRejection::WarmingUp);
+			 H.Add(HandCollisionPose(.03, FVector(300, 0, 0), 4), T) == EBallTrackingRejection::WarmingUp);
 	TestTrue(TEXT("No sweep across loss"), !H.GetLatest()->bCollisionReady);
-	H.Add(Pose(.04, FVector(301, 0, 0), 5), T);
+	H.Add(HandCollisionPose(.04, FVector(301, 0, 0), 5), T);
 	TestEqual(TEXT("New generation retained"), H.GetLatest()->Generation, Generation);
-	auto Origin = Pose(.05, FVector(1000, 0, 0), 6);
+	auto Origin = HandCollisionPose(.05, FVector(1000, 0, 0), 6);
 	Origin.OriginRevision = 2;
 	Origin.OriginPosition.X = 700;
 	TestTrue(TEXT("Teleport is a new warmup, not huge velocity"),
 			 H.Add(Origin, T) == EBallTrackingRejection::WarmingUp);
 	TestTrue(TEXT("Out of order ignored"),
-			 H.Add(Pose(.01, FVector::ZeroVector, 2), T) == EBallTrackingRejection::OutOfOrder);
+			 H.Add(HandCollisionPose(.01, FVector::ZeroVector, 2), T) == EBallTrackingRejection::OutOfOrder);
 	auto Fast = Origin;
 	Fast.CaptureSeconds = Fast.TimelineSeconds = .06;
 	Fast.Sequence = 7;
@@ -295,7 +295,7 @@ bool FHandSampleSafetyTest::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandRateTest, "FourSquareVR.Ball.Hand.TimestampedRatesProduceEquivalentOutcomes",
-								 Flags)
+								 HandCollisionFlags)
 bool FHandRateTest::RunTest(const FString &)
 {
 	FVector Baseline;
@@ -306,11 +306,12 @@ bool FHandRateTest::RunTest(const FString &)
 		P.Initialize(512);
 		FBallHandTrackingSettings T;
 		FBallPalmSettings PalmSettings;
+	PalmSettings.Shape = EBallPalmShape::Sphere;
 		PalmSettings.Material.Friction = 0;
 		for (int32 I = 0; I <= Hz * 1.2; ++I)
 		{
 			double Time = double(I) / Hz;
-			P.Add(Pose(Time, FVector(-100 + 100 * Time, 0, 0), I + 1), T);
+			P.Add(HandCollisionPose(Time, FVector(-100 + 100 * Time, 0, 0), I + 1), T);
 		}
 		FBallMotionHistory H;
 		H.Initialize(256);
@@ -331,7 +332,7 @@ bool FHandRateTest::RunTest(const FString &)
 				AddError(TEXT("Trajectory reconstruction failed"));
 				return false;
 			}
-			if (Sim.SimulateStep(S, MotionInputs(S), Config(), W, O) != EBallStepResult::Success)
+			if (Sim.SimulateStep(S, MotionInputs(S), HandCollisionConfig(), W, O) != EBallStepResult::Success)
 			{
 				AddError(TEXT("Rate simulation failed"));
 				return false;
@@ -353,7 +354,7 @@ bool FHandRateTest::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandHistoricalReplayTest,
-								 "FourSquareVR.Ball.Hand.HistoricalTrajectoriesReplayCompleteState", Flags)
+								 "FourSquareVR.Ball.Hand.HistoricalTrajectoriesReplayCompleteState", HandCollisionFlags)
 bool FHandHistoricalReplayTest::RunTest(const FString &)
 {
 	FBallMotionHistory Motions;
@@ -376,7 +377,7 @@ bool FHandHistoricalReplayTest::RunTest(const FString &)
 		Motions.Push(M);
 		auto I = MotionInputs(S);
 		if (H.Push({S, I}) != EBallHistoryWrite::Stored ||
-			Sim.SimulateStep(S, I, Config(), W, O) != EBallStepResult::Success)
+			Sim.SimulateStep(S, I, HandCollisionConfig(), W, O) != EBallStepResult::Success)
 		{
 			AddError(TEXT("Record failed"));
 			return false;
@@ -390,7 +391,7 @@ bool FHandHistoricalReplayTest::RunTest(const FString &)
 	FBallReplayRunner Runner;
 	FBallReplayReport Report;
 	TestTrue(TEXT("Replay actual immutable trajectories"),
-			 Runner.Replay(H, S.Identity, 0, 32, Config(), {}, W, Replayed, Report) == EBallReplayResult::Success);
+			 Runner.Replay(H, S.Identity, 0, 32, HandCollisionConfig(), {}, W, Replayed, Report) == EBallReplayResult::Success);
 	TestTrue(TEXT("Every state field including episodes restored"), BallTests::ExactlyEqual(S, Replayed));
 	FBallHistoryFrame First;
 	H.CopyFrame(0, S.Identity, First);
@@ -400,7 +401,7 @@ bool FHandHistoricalReplayTest::RunTest(const FString &)
 	{
 		FBallHistoryFrame R;
 		H.CopyFrame(F, S.Identity, R);
-		Sim.SimulateStep(TraceState, R.Inputs, Config(), W, O);
+		Sim.SimulateStep(TraceState, R.Inputs, HandCollisionConfig(), W, O);
 		for (int32 J = 0; J < O.EventCount; ++J)
 		{
 			if (EventIndex >= OriginalEvents.Num())
@@ -426,13 +427,13 @@ bool FHandHistoricalReplayTest::RunTest(const FString &)
 	const auto Before = Replayed;
 	Motions.Reset();
 	TestTrue(TEXT("Missing trajectories rejected before execution"),
-			 Runner.Replay(H, S.Identity, 0, 32, Config(), {}, W, Replayed, Report) != EBallReplayResult::Success);
+			 Runner.Replay(H, S.Identity, 0, 32, HandCollisionConfig(), {}, W, Replayed, Report) != EBallReplayResult::Success);
 	TestEqual(TEXT("No partial replay"), Report.ExecutedFrames, uint32(0));
 	TestTrue(TEXT("Destination untouched"), BallTests::ExactlyEqual(Before, Replayed));
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandMotionBoundsTest, "FourSquareVR.Ball.Hand.MotionHistoryWrapPinAndOwnership",
-								 Flags)
+								 HandCollisionFlags)
 bool FHandMotionBoundsTest::RunTest(const FString &)
 {
 	FBallMotionHistory H;
@@ -460,7 +461,7 @@ bool FHandMotionBoundsTest::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandPermutation,
-								 "FourSquareVR.Ball.Hand.SimultaneousInputOrderDoesNotChangeStateOrEvents", Flags)
+								 "FourSquareVR.Ball.Hand.SimultaneousInputOrderDoesNotChangeStateOrEvents", HandCollisionFlags)
 bool FHandPermutation::RunTest(const FString &)
 {
 	FBallState Results[2];
@@ -481,7 +482,7 @@ bool FHandPermutation::RunTest(const FString &)
 		}
 		Results[I] = BallTests::State();
 		TestTrue(TEXT("Unordered input batch succeeds"),
-				 Step(F, Results[I], Config(), Outputs[I]) == EBallStepResult::Success);
+				 Step(F, Results[I], HandCollisionConfig(), Outputs[I]) == EBallStepResult::Success);
 	}
 	TestTrue(TEXT("Full state including pair cache is canonical"), BallTests::ExactlyEqual(Results[0], Results[1]));
 	TestEqual(TEXT("Same event count"), Outputs[0].EventCount, Outputs[1].EventCount);
@@ -493,7 +494,7 @@ bool FHandPermutation::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandSleepingWake, "FourSquareVR.Ball.Hand.IncomingPalmWakesSupportedRestingBall",
-								 Flags)
+								 HandCollisionFlags)
 bool FHandSleepingWake::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -505,7 +506,7 @@ bool FHandSleepingWake::RunTest(const FString &)
 	S.bHasSupport = true;
 	S.SupportCollider = {1, 1};
 	S.SleepDwellTime = 1;
-	FBallPhysicsConfig C = Config();
+	FBallPhysicsConfig C = HandCollisionConfig();
 	C.Gravity.Z = -980.665;
 	FRecordedBallCollisionWorld Static;
 	Static.AddPlane({1, 1}, FVector::ZeroVector, FVector::UpVector);
@@ -518,7 +519,7 @@ bool FHandSleepingWake::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandRotatingSurface, "FourSquareVR.Ball.Hand.RotatingPalmSurfaceFrictionResponse",
-								 Flags)
+								 HandCollisionFlags)
 bool FHandRotatingSurface::RunTest(const FString &)
 {
 	FBallMotionFrame F;
@@ -529,7 +530,7 @@ bool FHandRotatingSurface::RunTest(const FString &)
 	auto S = BallTests::State();
 	S.Position.X = -20;
 	S.LinearVelocity.X = 2400;
-	auto C = Config();
+	auto C = HandCollisionConfig();
 	C.SurfaceFriction = .35;
 	FBallStepOutput O;
 	TestTrue(TEXT("Rotating spherical surface uses shared physical response"),

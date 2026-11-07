@@ -1,4 +1,5 @@
 #include "Ball/BallCollisionSolver.h"
+#include "Ball/BallIntegrator.h"
 
 namespace
 {
@@ -613,6 +614,10 @@ EBallStepResult FBallCollisionSolver::Resolve(FBallState &State, const FBallCont
 		}
 		++Output.Diagnostics.RestitutionFallbacks;
 	}
+	// Optional designer damping applies even to endpoint collisions (there may be no later Kick).
+	// Do not publish a capped velocity that penetrates a faster kinematic surface.
+	if (!FBallIntegrator::ApplyVelocityLimits(State, Config))
+		return EBallStepResult::NumericFailure;
 	for (int32 I = 0; I < Batch.Count; ++I)
 	{
 		const auto &C = Batch.Contacts[I];

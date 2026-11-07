@@ -1,9 +1,21 @@
 #include "Ball/BallMotionHistory.h"
+SIZE_T FBallMotionHistory::GetActivePayloadBytes() const
+{
+	SIZE_T Bytes = 0;
+	for (int32 I = 0; I < Count; ++I)
+	{
+		const auto &F = Frames[(Head + I) % Frames.Num()];
+		Bytes += sizeof(FBallMotionFrame) - sizeof(F.Colliders) - sizeof(F.Segments) +
+				 F.ColliderCount * sizeof(FBallColliderMotion) + F.SegmentCount * sizeof(FBallMotionSegment);
+	}
+	return Bytes;
+}
 bool FBallMotionFrame::IsValid() const
 {
 	if (Frame == MAX_uint64 || !Epoch.IsValid() || !Timebase || !Revision || !EnvironmentRevision ||
-		!FMath::IsFinite(DeltaTime) || DeltaTime <= 0 || ColliderCount < 0 ||
-		ColliderCount > BallMotionLimits::Colliders || SegmentCount < 0 || SegmentCount > BallMotionLimits::Segments)
+		GeometryVersion != BallMotionLimits::GeometryVersion || !FMath::IsFinite(DeltaTime) || DeltaTime <= 0 ||
+		ColliderCount < 0 || ColliderCount > BallMotionLimits::Colliders || SegmentCount < 0 ||
+		SegmentCount > BallMotionLimits::Segments)
 	{
 		return false;
 	}
@@ -16,7 +28,12 @@ bool FBallMotionFrame::IsValid() const
 			C.SegmentCount > BallMotionLimits::SegmentsPerCollider || C.FirstSegment + C.SegmentCount > SegmentCount ||
 			!C.Material.IsValid() || !FMath::IsFinite(C.Radius) || C.Radius <= 0 || C.HalfExtents.ContainsNaN() ||
 			C.HalfExtents.GetMin() <= 0 || C.Orientation.ContainsNaN() || !C.Orientation.IsNormalized() ||
-			uint8(C.Shape) > uint8(EBallMotionShape::TranslatingBox) ||
+			uint8(C.Shape) > uint8(EBallMotionShape::RoundedBox) || !FMath::IsFinite(C.RoundRadius) ||
+			C.RoundRadius < 0 || C.RoundRadius > C.HalfExtents.GetMin() || !FMath::IsFinite(C.CCDDistanceTolerance) ||
+			C.CCDDistanceTolerance < 1.e-8 || C.CCDDistanceTolerance > .001 || C.MaximumCCDIterations < 1 ||
+			C.MaximumCCDIterations > 2048 || C.PivotToCenter.ContainsNaN() || C.CalibrationRotation.ContainsNaN() ||
+			!C.CalibrationRotation.IsNormalized() || !C.FaceMaterials.Front.IsValid() ||
+			!C.FaceMaterials.Back.IsValid() || !C.FaceMaterials.Side.IsValid() ||
 			(C.Category != EBallContactCategory::Hand && C.Category != EBallContactCategory::Kinematic))
 		{
 			return false;
@@ -35,7 +52,11 @@ bool FBallMotionFrame::IsValid() const
 			if (!FMath::IsFinite(S.StartFraction) || !FMath::IsFinite(S.EndFraction) ||
 				S.StartFraction < Last - 1.e-12 || S.StartFraction < 0 || S.EndFraction > 1 ||
 				S.EndFraction <= S.StartFraction || S.Start.ContainsNaN() || S.End.ContainsNaN() ||
-				S.SurfaceAngularVelocity.ContainsNaN())
+				S.SurfaceAngularVelocity.ContainsNaN() || S.StartOrientation.ContainsNaN() ||
+				S.EndOrientation.ContainsNaN() || !S.StartOrientation.IsNormalized() ||
+				!S.EndOrientation.IsNormalized() ||
+				(C.Shape == EBallMotionShape::RoundedBox &&
+				 S.StartOrientation.AngularDistance(S.EndOrientation) >= PI - 1.e-6))
 			{
 				return false;
 			}

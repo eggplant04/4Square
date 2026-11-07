@@ -17,7 +17,7 @@
 
 namespace
 {
-constexpr auto Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
+constexpr auto HandIntegrationFlags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
 struct FHandWorld
 {
 	TGuardValue<uint64> RestoreCounter{GFrameCounter, GFrameCounter};
@@ -58,7 +58,7 @@ struct FHandWorld
 };
 } // namespace
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandNativeBinding,
-								 "FourSquareVR.Ball.HandIntegration.ExistingGripRegistrationAndDiscovery", Flags)
+								 "FourSquareVR.Ball.HandIntegration.ExistingGripRegistrationAndDiscovery", HandIntegrationFlags)
 bool FHandNativeBinding::RunTest(const FString &)
 {
 	FHandWorld T;
@@ -86,7 +86,7 @@ bool FHandNativeBinding::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandNativeStrike, "FourSquareVR.Ball.HandIntegration.RealTicksCaptureAndStrike",
-								 Flags)
+								 HandIntegrationFlags)
 bool FHandNativeStrike::RunTest(const FString &)
 {
 	FHandWorld T;
@@ -121,7 +121,7 @@ bool FHandNativeStrike::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandNativeDiscontinuities,
-								 "FourSquareVR.Ball.HandIntegration.TeleportLossAndReacquisition", Flags)
+								 "FourSquareVR.Ball.HandIntegration.TeleportLossAndReacquisition", HandIntegrationFlags)
 bool FHandNativeDiscontinuities::RunTest(const FString &)
 {
 	FHandWorld T;
@@ -163,7 +163,7 @@ bool FHandNativeDiscontinuities::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandNativeWorldOrigin,
-								 "FourSquareVR.Ball.HandIntegration.WorldOriginCreatesExplicitHistoryBoundary", Flags)
+								 "FourSquareVR.Ball.HandIntegration.WorldOriginCreatesExplicitHistoryBoundary", HandIntegrationFlags)
 bool FHandNativeWorldOrigin::RunTest(const FString &)
 {
 	FHandWorld T;
@@ -187,7 +187,7 @@ bool FHandNativeWorldOrigin::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandNativeKinematic,
-								 "FourSquareVR.Ball.HandIntegration.RecordedBoxSurvivesSourceDestruction", Flags)
+								 "FourSquareVR.Ball.HandIntegration.RecordedBoxSurvivesSourceDestruction", HandIntegrationFlags)
 bool FHandNativeKinematic::RunTest(const FString &)
 {
 	FHandWorld T;
@@ -237,7 +237,7 @@ bool FHandNativeKinematic::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandNativeTuning,
-								 "FourSquareVR.Ball.HandIntegration.LivePalmTuningRequiresFreshSamples", Flags)
+								 "FourSquareVR.Ball.HandIntegration.LivePalmTuningRequiresFreshSamples", HandIntegrationFlags)
 bool FHandNativeTuning::RunTest(const FString &)
 {
 	FHandWorld T;

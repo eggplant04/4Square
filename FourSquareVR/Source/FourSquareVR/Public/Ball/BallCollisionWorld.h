@@ -23,6 +23,8 @@ struct FOURSQUAREVR_API FBallCollisionQuery
 	uint64 StepFrame = 0;
 	uint32 MotionTimebase = 0, MotionRevision = 0;
 	uint16 IgnoredMotionMask = 0;
+	/** Optional transient diagnostics only; never read to make a physics decision. */
+	FBallMotionCCDStatistics *MotionStatistics = nullptr;
 };
 
 enum class EBallQueryResult : uint8
@@ -30,7 +32,8 @@ enum class EBallQueryResult : uint8
 	Clear,
 	Contact,
 	InvalidQuery,
-	CapacityExceeded
+	CapacityExceeded,
+	Unresolved
 };
 
 struct FOURSQUAREVR_API FBallContactBatch

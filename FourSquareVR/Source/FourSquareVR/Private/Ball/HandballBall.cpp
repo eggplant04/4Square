@@ -1,5 +1,6 @@
 #include "Ball/HandballBall.h"
 #include "Ball/BallSimulationSubsystem.h"
+#include "Ball/BallNetworkComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -15,8 +16,11 @@ AHandballBall::AHandballBall()
 	: PreparedOutput(MakeUnique<FBallStepOutput>()), LastOutputStorage(MakeUnique<FBallStepOutput>())
 {
 	PrimaryActorTick.bCanEverTick = false;
-	bReplicates = false; // Stage 5 will enable replication with the complete authoritative state protocol.
+	bReplicates = true;
+	bAlwaysRelevant = true;
+	SetNetUpdateFrequency(30);
 	SetReplicateMovement(false);
+	Network = CreateDefaultSubobject<UBallNetworkComponent>(TEXT("BallNetwork"));
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SimulationRoot"));
 	SetRootComponent(SceneRoot);
 	CollisionProxy = CreateDefaultSubobject<USphereComponent>(TEXT("BallCollisionProxy"));
@@ -50,11 +54,12 @@ void AHandballBall::OnConstruction(const FTransform &Transform)
 void AHandballBall::BeginPlay()
 {
 	Super::BeginPlay();
+	SetReplicateMovement(false);
 	InitialTransform = GetActorTransform();
 	if (GetNetMode() == NM_Client)
 	{
 		return;
-	} // Custom snapshot/prediction transport is Stage 5/6.
+	} // Stage 5 clients display authoritative baselines; prediction is Stage 6.
 	if (auto *System = GetWorld()->GetSubsystem<UBallSimulationSubsystem>())
 	{
 		if (!System->RegisterBall(this))
@@ -139,8 +144,12 @@ bool AHandballBall::PrepareStep(const IBallCollisionWorld &World, uint64 Frame, 
 	const auto Result = Simulator.SimulateStep(PreparedState, PreparedInputs, RuntimePhysics, World, *PreparedOutput);
 	if (Result != EBallStepResult::Success)
 	{
-		UE_LOG(LogHandballBall, Error, TEXT("Ball step failed (%d), frame %llu; state remains unchanged."),
-			   static_cast<int32>(Result), Frame);
+		UE_LOG(LogHandballBall, Error,
+			   TEXT("Ball step failed (%d), frame %llu; query=%u interval=[%.17g,%.17g] rotationalUnresolved=%u; state "
+					"remains unchanged."),
+			   static_cast<int32>(Result), Frame, PreparedOutput->Diagnostics.QueryFailureCode,
+			   PreparedOutput->Diagnostics.FailedQueryBegin, PreparedOutput->Diagnostics.FailedQueryEnd,
+			   PreparedOutput->Diagnostics.MotionCCD.Unresolved);
 		return false;
 	}
 	return true;
@@ -174,7 +183,7 @@ void AHandballBall::ProjectState()
 
 bool AHandballBall::SetBallState(FVector Position, FVector Velocity, FRotator Rotation, FVector AngularVelocity)
 {
-	if (!HasAuthority() || !bInitialized || State.Identity.Generation == MAX_uint32)
+	if (GetNetMode() == NM_Client || !HasAuthority() || !bInitialized || State.Identity.Generation == MAX_uint32)
 	{
 		return false;
 	}
@@ -197,6 +206,21 @@ bool AHandballBall::SetBallState(FVector Position, FVector Velocity, FRotator Ro
 	History.Reset(State.Identity);
 	*LastOutputStorage = {};
 	ProjectState();
+	if (Network)
+		Network->Publish(true);
+	return true;
+}
+bool AHandballBall::ApplyAuthoritativeSnapshot(const FBallNetworkSnapshot &S)
+{
+	if (GetNetMode() != NM_Client || !S.IsValid())
+		return false;
+	State = S.State;
+	RuntimePhysics = Physics = S.Physics;
+	HistorySettings = S.History;
+	bInitialized = true;
+	CollisionProxy->SetSphereRadius(Physics.Radius, false);
+	VisualMesh->SetRelativeScale3D(FVector(Physics.Radius / 50));
+	ProjectState();
 	return true;
 }
 bool AHandballBall::ResetBall()
@@ -215,7 +239,7 @@ bool AHandballBall::LaunchBall(FVector Velocity, FVector AngularVelocity)
 
 bool AHandballBall::SetBallPhysicsConfig(const FBallPhysicsConfig &Config)
 {
-	if (!HasAuthority() || !bInitialized || !Config.IsValid() ||
+	if (GetNetMode() == NM_Client || !HasAuthority() || !bInitialized || !Config.IsValid() ||
 		Config.FixedFrequency != RuntimePhysics.FixedFrequency || RuntimePhysics.Version == MAX_int32 ||
 		State.Identity.Generation == MAX_uint32)
 	{

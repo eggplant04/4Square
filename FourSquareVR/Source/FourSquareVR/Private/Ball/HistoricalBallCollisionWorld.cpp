@@ -57,7 +57,13 @@ EBallQueryResult FHistoricalBallCollisionWorld::GatherContacts(const FBallCollis
 			continue;
 		}
 		FBallContact C;
-		if (FBallHandCollisionSolver::Sweep(*F, F->Colliders[I], Q, C) && !Output.Add(C, Q))
+		const auto MotionResult = FBallHandCollisionSolver::Query(*F, F->Colliders[I], Q, C);
+		if (MotionResult != EBallQueryResult::Clear && MotionResult != EBallQueryResult::Contact)
+		{
+			Output.Count = 0;
+			return MotionResult;
+		}
+		if (MotionResult == EBallQueryResult::Contact && !Output.Add(C, Q))
 		{
 			return EBallQueryResult::CapacityExceeded;
 		}

@@ -213,6 +213,12 @@ struct FOURSQUAREVR_API FBallCollisionEvent
 	uint8 HandSide = 0;
 };
 
+struct FOURSQUAREVR_API FBallMotionCCDStatistics
+{
+	uint32 Queries = 0, Iterations = 0, MaximumIterations = 0, DistanceEvaluations = 0, SupportBounds = 0,
+		   Unresolved = 0;
+};
+
 struct FOURSQUAREVR_API FBallStepDiagnostics
 {
 	uint32 Microintervals = 0;
@@ -223,6 +229,9 @@ struct FOURSQUAREVR_API FBallStepDiagnostics
 	uint32 SupportForceSolves = 0;
 	uint32 MotionSlices = 0, RejectedMotionContacts = 0;
 	double DurationMicroseconds = 0;
+	FBallMotionCCDStatistics MotionCCD;
+	uint32 QueryFailureCode = 0;
+	double FailedQueryBegin = 0, FailedQueryEnd = 0;
 };
 
 struct FOURSQUAREVR_API FBallStepOutput

@@ -80,6 +80,7 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState &State, const FBallStepI
 		Q.StepFrame = Inputs.SimulationFrame;
 		Q.MotionTimebase = Inputs.MotionTimebase;
 		Q.MotionRevision = Inputs.MotionRevision;
+		Q.MotionStatistics = &Output.Diagnostics.MotionCCD;
 		if (Motion)
 		{
 			Q.IgnoredMotionMask = FBallMotionContactPolicy::PrepareQuery(
@@ -97,6 +98,9 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState &State, const FBallStepI
 		}
 		if (Result != EBallQueryResult::Clear && Result != EBallQueryResult::Contact)
 		{
+			Output.Diagnostics.QueryFailureCode = uint32(Result);
+			Output.Diagnostics.FailedQueryBegin = Q.Time.Fraction;
+			Output.Diagnostics.FailedQueryEnd = Q.EndFraction;
 			return EBallStepResult::QueryFailure;
 		}
 		if (Batch.Count < 0 || Batch.Count > BallLimits::Contacts ||
@@ -142,6 +146,8 @@ EBallStepResult FBallSimulator::SimulateStep(FBallState &State, const FBallStepI
 	for (int32 Intervals = InitialIntervals; Intervals <= Config.MaximumMicrointervals; Intervals *= 2)
 	{
 		FBallState Candidate = State;
+		if (!FBallIntegrator::ApplyVelocityLimits(Candidate, Config))
+			return Finish(EBallStepResult::NumericFailure);
 		if (Motion)
 		{
 			FBallMotionContactPolicy::RetireAbsent(Candidate, *Motion);

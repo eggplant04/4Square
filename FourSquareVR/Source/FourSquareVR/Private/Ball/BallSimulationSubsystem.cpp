@@ -1,5 +1,6 @@
 #include "Ball/BallSimulationSubsystem.h"
 #include "Ball/HandballBall.h"
+#include "Ball/BallNetworkComponent.h"
 #include "Ball/UnrealBallCollisionWorld.h"
 #include "Engine/World.h"
 #include "Ball/VRHandCollisionComponent.h"
@@ -28,6 +29,7 @@ void UBallSimulationSubsystem::Initialize(FSubsystemCollectionBase &Collection)
 	HandSources.Reserve(BallMotionLimits::Hands / 2);
 	KinematicSources.Reserve(BallMotionLimits::Kinematics);
 	TrackingTimeOrigin = GetWorld()->GetTimeSeconds();
+	TrackingMonotonicOrigin = LastNetworkTick = FPlatformTime::Seconds();
 	LastWorldOrigin = GetWorld()->OriginLocation;
 	Epoch = FGuid::NewGuid();
 	Clock.Initialize({}, EBallClockRole::Authority);
@@ -61,21 +63,38 @@ FString UBallSimulationSubsystem::GetSimulationDiagnostics() const
 {
 	return FString::Printf(
 		TEXT("Frame=%llu TickRegistered=%d TickEnabled=%d Status=%d Debt=%.6f Overruns=%llu RenderFrames=%llu "
-			 "StartupWaiting=%d Hands=%d Kinematics=%d MotionBytes=%llu MotionBuild=%.2fus Peak=%.2fus"),
+			 "StartupWaiting=%d Hands=%d Kinematics=%d MotionBytes=%llu MotionBuild=%.2fus Peak=%.2fus "
+			 "ActiveMotionBytes=%llu"),
 		Clock.GetFrame(), TickFunction.IsTickFunctionRegistered(), TickFunction.IsTickFunctionEnabled(),
 		static_cast<int32>(Clock.GetStatus()), Clock.GetAccumulatorSeconds(), Clock.GetDiagnostics().Overruns,
 		Clock.GetDiagnostics().RenderFrames, bWaitingForStartup, HandSources.Num(), KinematicSources.Num(),
-		uint64(MotionHistory.GetAllocatedBytes()), LastMotionBuildMicroseconds, PeakMotionBuildMicroseconds);
+		uint64(MotionHistory.GetAllocatedBytes()), LastMotionBuildMicroseconds, PeakMotionBuildMicroseconds,
+		uint64(MotionHistory.GetActivePayloadBytes()));
 }
 
 double UBallSimulationSubsystem::GetTrackingTimelineSeconds() const
 {
+	if (GetWorld()->GetNetMode() != NM_Standalone)
+		return FPlatformTime::Seconds() - TrackingMonotonicOrigin;
 	return GetWorld()->GetTimeSeconds() - TrackingTimeOrigin;
 }
 void UBallSimulationSubsystem::ResetMotionTimebase()
 {
 	MotionHistory.Reset();
 	TrackingTimeOrigin = GetWorld()->GetTimeSeconds() - Clock.GetFrame() / Frequency;
+	LastNetworkTick = FPlatformTime::Seconds();
+	TrackingMonotonicOrigin = LastNetworkTick - Clock.GetFrame() / Frequency;
+	NetworkInputCushionRemaining = GetWorld()->GetNetMode() != NM_Standalone ? 2.0 / Frequency : 0;
+}
+double UBallSimulationSubsystem::MapMonotonicToTimeline(double Stamp) const
+{
+	return GetWorld()->GetNetMode() != NM_Standalone ? Stamp - TrackingMonotonicOrigin : GetTrackingTimelineSeconds();
+}
+void UBallSimulationSubsystem::ForceNetworkBaselines()
+{
+	for (const auto &B : Balls)
+		if (B.IsValid() && B->Network)
+			B->Network->Publish(true);
 }
 uint32 UBallSimulationSubsystem::RegisterHandSource(UVRHandCollisionComponent *Source)
 {
@@ -85,10 +104,13 @@ uint32 UBallSimulationSubsystem::RegisterHandSource(UVRHandCollisionComponent *S
 	}
 	const auto *Pawn = Cast<APawn>(Source->GetOwner());
 	if (!Source->bAllowScriptedTrackingForTests &&
-		(!Pawn || !Pawn->IsPlayerControlled() || !Pawn->IsLocallyControlled()))
+		(!Pawn || !Pawn->IsPlayerControlled() ||
+		 (GetWorld()->GetNetMode() == NM_Standalone && !Pawn->IsLocallyControlled())))
 	{
 		return 0;
 	}
+	if (GetWorld()->GetNetMode() == NM_Client)
+		return 0;
 	HandSources.RemoveAll([](const auto &P) { return !P.IsValid(); });
 	for (const auto &P : HandSources)
 	{
@@ -106,6 +128,9 @@ uint32 UBallSimulationSubsystem::RegisterHandSource(UVRHandCollisionComponent *S
 		return 0;
 	}
 	Source->ParticipantId = NextParticipantId++;
+	// Existing assets stay intact; an actor channel is necessary for owned component RPCs.
+	if (GetWorld()->GetNetMode() != NM_Standalone && Source->GetOwner()->HasAuthority())
+		Source->GetOwner()->SetReplicates(true);
 	HandSources.Add(Source);
 	TickFunction.AddPrerequisite(Source, Source->PrimaryComponentTick);
 	return Source->ParticipantId;
@@ -163,7 +188,8 @@ void UBallSimulationSubsystem::DiscoverLocalHands()
 	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
 	{
 		auto *Pawn = *It;
-		if (!Pawn->IsPlayerControlled() || !Pawn->IsLocallyControlled() ||
+		if (GetWorld()->GetNetMode() == NM_Client || !Pawn->IsPlayerControlled() ||
+			(GetWorld()->GetNetMode() == NM_Standalone && !Pawn->IsLocallyControlled()) ||
 			Pawn->FindComponentByClass<UVRHandCollisionComponent>())
 		{
 			continue;
@@ -222,7 +248,7 @@ bool UBallSimulationSubsystem::RegisterBall(AHandballBall *Ball)
 	}
 	if (Balls.Num() == 0)
 	{
-		if (Clock.GetFrame() > 0 && Clock.GetTimebase() < MAX_uint32)
+		if ((Clock.GetFrame() > 0 || GetWorld()->GetNetMode() != NM_Standalone) && Clock.GetTimebase() < MAX_uint32)
 		{
 			Clock.PauseAuthority();
 			Clock.ResumeAuthority(Clock.GetTimebase() + 1);
@@ -257,6 +283,12 @@ void UBallSimulationSubsystem::UnregisterBall(AHandballBall *Ball)
 
 void UBallSimulationSubsystem::TickSimulation(double Elapsed)
 {
+	if (GetWorld()->GetNetMode() != NM_Standalone)
+	{
+		const double Now = FPlatformTime::Seconds();
+		Elapsed = Now - LastNetworkTick;
+		LastNetworkTick = Now;
+	}
 	Balls.RemoveAll([](const auto &Entry) { return !Entry.IsValid(); });
 	HandSources.RemoveAll([](const auto &Entry) { return !Entry.IsValid(); });
 	KinematicSources.RemoveAll([](const auto &Entry) { return !Entry.IsValid(); });
@@ -313,6 +345,13 @@ void UBallSimulationSubsystem::TickSimulation(double Elapsed)
 		Clock.PauseAuthority();
 		UE_LOG(LogHandballBall, Warning,
 			   TEXT("Static environment changed; paused. Call RebuildStaticEnvironment at an explicit boundary."));
+	}
+	// Explicit startup phase only: fixed server input cushion, not a per-player latency adjustment.
+	if (NetworkInputCushionRemaining > 0)
+	{
+		const double Delay = FMath::Min(Elapsed, NetworkInputCushionRemaining);
+		NetworkInputCushionRemaining -= Delay;
+		Elapsed -= Delay;
 	}
 	if (!Clock.BeginRenderFrame(Elapsed))
 	{

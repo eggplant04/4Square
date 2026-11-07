@@ -1,8 +1,14 @@
 #include "Ball/BallHandTypes.h"
 bool FBallPalmSettings::IsValid() const
 {
-	return FMath::IsFinite(Radius) && Radius > 0 && !CenterOffset.ContainsNaN() && Material.IsValid() &&
-		   FMath::IsFinite(MaximumCurveError) && MaximumCurveError > 0;
+	return uint8(Shape) <= uint8(EBallPalmShape::RoundedBox) && !BoxDimensions.ContainsNaN() &&
+		   BoxDimensions.GetMin() > 0 && FMath::IsFinite(RoundRadius) && RoundRadius >= 0 &&
+		   RoundRadius <= .5 * BoxDimensions.GetMin() && FMath::IsFinite(CCDDistanceTolerance) &&
+		   CCDDistanceTolerance >= 1.e-8 && CCDDistanceTolerance <= .001 && MaximumCCDIterations >= 1 &&
+		   MaximumCCDIterations <= 2048 && !RotationOffset.ContainsNaN() && FaceMaterials.Front.IsValid() &&
+		   FaceMaterials.Back.IsValid() && FaceMaterials.Side.IsValid() && FMath::IsFinite(Radius) && Radius > 0 &&
+		   !CenterOffset.ContainsNaN() && Material.IsValid() && FMath::IsFinite(MaximumCurveError) &&
+		   MaximumCurveError > 0;
 }
 bool FBallHandTrackingSettings::IsValid() const
 {
@@ -11,7 +17,8 @@ bool FBallHandTrackingSettings::IsValid() const
 		   FMath::IsFinite(ExtrapolationFilterSeconds) && ExtrapolationFilterSeconds >= 0 &&
 		   FMath::IsFinite(MaximumExtrapolationFilterError) && MaximumExtrapolationFilterError >= 0 &&
 		   FMath::IsFinite(MaximumSpeed) && MaximumSpeed > 0 && FMath::IsFinite(MaximumAngularSpeed) &&
-		   MaximumAngularSpeed > 0 && FMath::IsFinite(MaximumAcceleration) && MaximumAcceleration > 0 &&
+		   MaximumAngularSpeed > 0 && FMath::IsFinite(MaximumSampleRotation) && MaximumSampleRotation > 0 &&
+		   MaximumSampleRotation < PI - 1.e-6 && FMath::IsFinite(MaximumAcceleration) && MaximumAcceleration > 0 &&
 		   FMath::IsFinite(MaximumHeadSpeed) && MaximumHeadSpeed > 0 && FMath::IsFinite(MaximumReach) &&
 		   MaximumReach > 0;
 }

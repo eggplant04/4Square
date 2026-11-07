@@ -162,7 +162,10 @@ bool UBallKinematicColliderComponent::AppendRecordedMotion(FBallMotionFrame &F, 
 	}
 	const int32 Before = F.ColliderCount;
 	EBallTrackingRejection R;
-	if (!History.BuildMotion(Start, Sphere, Safety(), SourceId, EBallHandSide::Left, F, R, ConfigurationVersion))
+	auto Settings = Sphere;
+	Settings.Shape =
+		EBallPalmShape::Sphere; // This provider retains its explicit legacy sphere/translating-box contract.
+	if (!History.BuildMotion(Start, Settings, Safety(), SourceId, EBallHandSide::Left, F, R, ConfigurationVersion))
 	{
 		Rejection = R;
 		return false;

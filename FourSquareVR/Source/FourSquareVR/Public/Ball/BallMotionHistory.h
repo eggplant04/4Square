@@ -3,12 +3,16 @@
 enum class EBallMotionShape : uint8
 {
 	Sphere,
-	TranslatingBox
+	TranslatingBox,
+	RoundedBox
 };
 struct FOURSQUAREVR_API FBallMotionSegment
 {
-	double StartFraction = 0, EndFraction = 1;
+	/** World palm quaternion endpoints. Shortest arc; normalized; immutable replay inputs. */
+	FQuat StartOrientation = FQuat::Identity, EndOrientation = FQuat::Identity;
+	// Keep 16-byte-aligned quaternions together: same values/precision, fewer padding bytes per retained segment.
 	FVector Start = FVector::ZeroVector, End = FVector::ZeroVector, SurfaceAngularVelocity = FVector::ZeroVector;
+	double StartFraction = 0, EndFraction = 1;
 	uint32 FirstSample = 0, SecondSample = 0;
 };
 struct FOURSQUAREVR_API FBallColliderMotion
@@ -23,6 +27,13 @@ struct FOURSQUAREVR_API FBallColliderMotion
 	double Radius = 7;
 	FVector HalfExtents = FVector(5);
 	FQuat Orientation = FQuat::Identity;
+	double RoundRadius = 0;
+	double CCDDistanceTolerance = 1.e-6;
+	int32 MaximumCCDIterations = 256;
+	/** Controller-to-center offset in PALM coordinates. RoundedBox reconstructs the exact offset arc. */
+	FVector PivotToCenter = FVector::ZeroVector;
+	FQuat CalibrationRotation = FQuat::Identity;
+	FBallPalmFaceMaterials FaceMaterials;
 	FBallSurfaceMaterial Material;
 	int32 FirstSegment = 0, SegmentCount = 0;
 };
@@ -32,6 +43,7 @@ struct FOURSQUAREVR_API FBallMotionFrame
 	uint64 Frame = 0;
 	FGuid Epoch;
 	uint32 Timebase = 1, Revision = 1, EnvironmentRevision = 1;
+	uint32 GeometryVersion = BallMotionLimits::GeometryVersion;
 	double DeltaTime = 1.0 / 120.0;
 	int32 ColliderCount = 0, SegmentCount = 0;
 	FBallColliderMotion Colliders[BallMotionLimits::Colliders];
@@ -64,6 +76,11 @@ class FOURSQUAREVR_API FBallMotionHistory
 	{
 		return Frames.Num();
 	}
+	int32 GetRetainedCount() const
+	{
+		return Count;
+	}
+	SIZE_T GetActivePayloadBytes() const;
 
   private:
 	TArray<FBallMotionFrame> Frames;

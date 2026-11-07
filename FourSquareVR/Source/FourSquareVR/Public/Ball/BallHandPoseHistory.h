@@ -10,6 +10,19 @@ class FOURSQUAREVR_API FBallHandPoseHistory
 	EBallTrackingRejection Add(const FBallHandObservation &Pose, const FBallHandTrackingSettings &Settings);
 	void NotifyDiscontinuity();
 	const FBallHandSample *GetLatest() const;
+	int32 Num() const
+	{
+		return Count;
+	}
+	const FBallHandSample *GetSample(int32 Index) const
+	{
+		return Index >= 0 && Index < Count ? &At(Index) : nullptr;
+	}
+	/** Read-only numerical view over SERVER-VALIDATED samples; no copies or allocations in fixed steps. */
+	static bool BuildAcceptedMotion(TConstArrayView<FBallHandSample> Accepted, double StartSeconds,
+									const FBallPalmSettings &Palm, const FBallHandTrackingSettings &Settings,
+									uint32 Participant, EBallHandSide Side, FBallMotionFrame &Frame,
+									EBallTrackingRejection &Reason, uint32 ConfigurationVersion);
 	bool BuildMotion(double StartSeconds, const FBallPalmSettings &Palm, const FBallHandTrackingSettings &Settings,
 					 uint32 Participant, EBallHandSide Side, FBallMotionFrame &Frame, EBallTrackingRejection &OutReason,
 					 uint32 ConfigurationVersion = 1) const;
@@ -23,6 +36,7 @@ class FOURSQUAREVR_API FBallHandPoseHistory
 	void Push(const FBallHandSample &Sample);
 	const FBallHandSample &At(int32 Index) const;
 	TArray<FBallHandSample> Samples;
+	TConstArrayView<FBallHandSample> AcceptedView;
 	int32 Head = 0, Count = 0;
 	uint32 Generation = 1;
 	bool bNeedsWarmup = true;

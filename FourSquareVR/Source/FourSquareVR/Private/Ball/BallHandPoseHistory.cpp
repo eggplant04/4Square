@@ -1,24 +1,17 @@
 #include "Ball/BallHandPoseHistory.h"
+#include "Ball/BallPalmGeometry.h"
 
 namespace
 {
 FVector AngularVelocity(const FQuat &A, const FQuat &B, double Dt)
 {
-	FQuat D = B * A.Inverse();
-	D.Normalize();
-	if (D.W < 0)
-	{
-		D = D * -1;
-	}
-	FVector Axis;
-	double Angle;
-	D.ToAxisAndAngle(Axis, Angle);
-	return Axis.GetSafeNormal() * Angle / Dt;
+	return FBallPalmGeometry::RotationVector(A, B) / Dt;
 }
 FVector PalmCenter(const FBallHandObservation &A, const FBallHandObservation &B, double Alpha, const FVector &Offset)
 {
 	return FMath::Lerp(A.ControllerPosition, B.ControllerPosition, Alpha) +
-		   FQuat::Slerp(A.ControllerOrientation, B.ControllerOrientation, Alpha).RotateVector(Offset);
+		   FBallPalmGeometry::InterpolateOrientation(A.ControllerOrientation, B.ControllerOrientation, Alpha)
+			   .RotateVector(Offset);
 }
 } // namespace
 bool FBallHandPoseHistory::Initialize(int32 Capacity)
@@ -35,7 +28,24 @@ bool FBallHandPoseHistory::Initialize(int32 Capacity)
 }
 const FBallHandSample &FBallHandPoseHistory::At(int32 Index) const
 {
+	if (AcceptedView.Num())
+		return AcceptedView[Index];
 	return Samples[(Head + Index) % Samples.Num()];
+}
+bool FBallHandPoseHistory::BuildAcceptedMotion(TConstArrayView<FBallHandSample> Accepted, double Start,
+											   const FBallPalmSettings &Palm, const FBallHandTrackingSettings &Settings,
+											   uint32 Participant, EBallHandSide Side, FBallMotionFrame &Frame,
+											   EBallTrackingRejection &Reason, uint32 ConfigurationVersion)
+{
+	FBallHandPoseHistory View;
+	View.AcceptedView = Accepted;
+	View.Count = Accepted.Num();
+	if (Accepted.Num())
+	{
+		View.Generation = Accepted.Last().Generation;
+		View.bNeedsWarmup = !Accepted.Last().Pose.bTracked;
+	}
+	return View.BuildMotion(Start, Palm, Settings, Participant, Side, Frame, Reason, ConfigurationVersion);
 }
 const FBallHandSample *FBallHandPoseHistory::GetLatest() const
 {
@@ -119,6 +129,10 @@ EBallTrackingRejection FBallHandPoseHistory::Add(const FBallHandObservation &P,
 		return Reject(EBallTrackingRejection::Stale);
 	}
 	S.LinearVelocity = (P.ControllerPosition - Last->Pose.ControllerPosition) / Dt;
+	if (Last->Pose.ControllerOrientation.AngularDistance(P.ControllerOrientation) > Settings.MaximumSampleRotation)
+	{
+		return Reject(EBallTrackingRejection::UnsupportedRotation);
+	}
 	S.AngularVelocity = AngularVelocity(Last->Pose.ControllerOrientation, P.ControllerOrientation, Dt);
 	if (S.LinearVelocity.Size() > Settings.MaximumSpeed || S.AngularVelocity.Size() > Settings.MaximumAngularSpeed ||
 		(P.HeadPosition - Last->Pose.HeadPosition).Size() / Dt > Settings.MaximumHeadSpeed)
@@ -182,14 +196,15 @@ bool FBallHandPoseHistory::BuildMotion(double StartSeconds, const FBallPalmSetti
 			Q = P;
 			Q.ControllerPosition += B.ExtrapolationVelocity * (End - P.TimelineSeconds);
 			const double Angle = B.AngularVelocity.Size() * (End - P.TimelineSeconds);
-			if (Angle >= PI - 1.e-6)
+			if (Angle > Settings.MaximumSampleRotation)
 			{
 				Reason = EBallTrackingRejection::ExcessiveVelocity;
 				return false;
 			}
 			if (Angle > 1.e-12)
 			{
-				Q.ControllerOrientation = FQuat(B.AngularVelocity.GetSafeNormal(), Angle) * P.ControllerOrientation;
+				Q.ControllerOrientation =
+					FQuat(B.AngularVelocity / B.AngularVelocity.Size(), Angle) * P.ControllerOrientation;
 				Q.ControllerOrientation.Normalize();
 			}
 			Q.TimelineSeconds = End;
@@ -198,12 +213,14 @@ bool FBallHandPoseHistory::BuildMotion(double StartSeconds, const FBallPalmSetti
 		const double Alpha0 = (Begin - P.TimelineSeconds) / Span, Alpha1 = (End - P.TimelineSeconds) / Span;
 		const double Angle = P.ControllerOrientation.AngularDistance(Q.ControllerOrientation) * (Alpha1 - Alpha0);
 		int32 Divisions = 1;
-		while (Palm.CenterOffset.Size() * (1 - FMath::Cos(Angle / (2 * Divisions))) > Palm.MaximumCurveError &&
+		while (Palm.Shape == EBallPalmShape::Sphere &&
+			   Palm.CenterOffset.Size() * (1 - FMath::Cos(Angle / (2 * Divisions))) > Palm.MaximumCurveError &&
 			   Divisions < BallMotionLimits::SegmentsPerCollider)
 		{
 			Divisions *= 2;
 		}
-		if (Palm.CenterOffset.Size() * (1 - FMath::Cos(Angle / (2 * Divisions))) > Palm.MaximumCurveError ||
+		if ((Palm.Shape == EBallPalmShape::Sphere &&
+			 Palm.CenterOffset.Size() * (1 - FMath::Cos(Angle / (2 * Divisions))) > Palm.MaximumCurveError) ||
 			N + Divisions > BallMotionLimits::SegmentsPerCollider)
 		{
 			Reason = EBallTrackingRejection::Capacity;
@@ -218,12 +235,23 @@ bool FBallHandPoseHistory::BuildMotion(double StartSeconds, const FBallPalmSetti
 			S.EndFraction = FMath::Clamp((T1 - StartSeconds) / Frame.DeltaTime, 0.0, 1.0);
 			S.Start = PalmCenter(P, Q, (T0 - P.TimelineSeconds) / Span, Palm.CenterOffset);
 			S.End = PalmCenter(P, Q, (T1 - P.TimelineSeconds) / Span, Palm.CenterOffset);
+			S.StartOrientation =
+				(FBallPalmGeometry::InterpolateOrientation(P.ControllerOrientation, Q.ControllerOrientation,
+														   (T0 - P.TimelineSeconds) / Span) *
+				 Palm.RotationOffset.Quaternion())
+					.GetNormalized();
+			S.EndOrientation = (FBallPalmGeometry::InterpolateOrientation(
+									P.ControllerOrientation, Q.ControllerOrientation, (T1 - P.TimelineSeconds) / Span) *
+								Palm.RotationOffset.Quaternion())
+								   .GetNormalized();
 			if ((S.End - S.Start).Size() / (T1 - T0) > Settings.MaximumSpeed)
 			{
 				Reason = EBallTrackingRejection::ExcessiveVelocity;
 				return false;
 			}
-			S.SurfaceAngularVelocity = Palm.bRotatingSurfaceFriction ? B.AngularVelocity : FVector::ZeroVector;
+			S.SurfaceAngularVelocity = Palm.bRotatingSurfaceFriction || Palm.Shape == EBallPalmShape::RoundedBox
+										   ? B.AngularVelocity
+										   : FVector::ZeroVector;
 			S.FirstSample = A.Pose.Sequence;
 			S.SecondSample = B.Pose.Sequence;
 		}
@@ -272,8 +300,15 @@ bool FBallHandPoseHistory::BuildMotion(double StartSeconds, const FBallPalmSetti
 	C.Side = Side;
 	C.OriginRevision = Origin;
 	C.Radius = Palm.Radius;
+	C.Shape = Palm.Shape == EBallPalmShape::RoundedBox ? EBallMotionShape::RoundedBox : EBallMotionShape::Sphere;
+	C.HalfExtents = Palm.BoxDimensions * .5;
+	C.RoundRadius = Palm.RoundRadius;
+	C.CCDDistanceTolerance = Palm.CCDDistanceTolerance;
+	C.MaximumCCDIterations = Palm.MaximumCCDIterations;
+	C.CalibrationRotation = Palm.RotationOffset.Quaternion();
+	C.PivotToCenter = C.CalibrationRotation.UnrotateVector(Palm.CenterOffset);
+	C.FaceMaterials = Palm.FaceMaterials;
 	C.Material = Palm.Material;
-	C.Material.bOverride = true;
 	C.Orientation = SelectedOrientation;
 	C.ConfigurationVersion = ConfigurationVersion;
 	C.WorldToMeters = SelectedWorldToMeters;

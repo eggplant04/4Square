@@ -30,4 +30,11 @@ class FOURSQUAREVR_API ABallHandTestRig : public APawn
 	double FrequencyHz = .5;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Test", meta = (ClampMin = "0"))
 	double Amplitude = 50;
+	/** Optional wrist-only diagnostic, independent of translation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Test")
+	bool bAnimateWrist = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Test", meta = (ClampMin = "0", ClampMax = "80"))
+	double WristAmplitudeDegrees = 17.18873385;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Test", meta = (ClampMin = "0"))
+	double WristFrequencyHz = 4;
 };

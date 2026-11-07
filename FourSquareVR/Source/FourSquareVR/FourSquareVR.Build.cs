@@ -10,7 +10,7 @@ public class FourSquareVR : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "HeadMountedDisplay" }); // Existing Grip controller/XR tracking APIs.
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "PhysicsCore" }); // Read-only surface material metadata; no rigid-body simulation.
+		PrivateDependencyModuleNames.AddRange(new string[] { "PhysicsCore", "NavigationSystem" }); // Query materials and validate owned origin requests; no rigid-body simulation.
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

@@ -28,9 +28,44 @@ enum class EBallTrackingRejection : uint8
 	ConflictingContact
 };
 USTRUCT(BlueprintType)
+struct FOURSQUAREVR_API FBallPalmFaceMaterials
+{
+	GENERATED_BODY()
+	/** Optional geometric front (+Z), back (-Z), and side materials. No contacts are disabled. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
+	bool bEnabled = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
+	FBallSurfaceMaterial Front;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
+	FBallSurfaceMaterial Back;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
+	FBallSurfaceMaterial Side;
+};
+UENUM(BlueprintType)
+enum class EBallPalmShape : uint8
+{
+	Sphere,
+	RoundedBox
+};
+USTRUCT(BlueprintType)
 struct FOURSQUAREVR_API FBallPalmSettings
 {
 	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
+	EBallPalmShape Shape = EBallPalmShape::RoundedBox;
+	/** Full OUTER dimensions: X width, Y length, Z thickness. +Z is the geometric front. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm", meta = (Units = "cm"))
+	FVector BoxDimensions = FVector(9, 11, 2.5);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm", meta = (ClampMin = "0", Units = "cm"))
+	double RoundRadius = .75;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm",
+			  meta = (ClampMin = "0.00000001", ClampMax = "0.001", Units = "cm"))
+	double CCDDistanceTolerance = 1.e-6;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm", meta = (ClampMin = "1", ClampMax = "2048"))
+	int32 MaximumCCDIterations = 256;
+	/** Palm axes relative to Grip axes; never assume a device's forward axis is the physical palm normal. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
+	FRotator RotationOffset = FRotator::ZeroRotator;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm", meta = (ClampMin = "0.01", Units = "cm"))
 	double Radius = 7;
 	/** Controller-local physical palm center, in cm. Calibrate per controller/device. */
@@ -38,17 +73,32 @@ struct FOURSQUAREVR_API FBallPalmSettings
 	FVector CenterOffset = FVector::ZeroVector;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
 	FBallSurfaceMaterial Material;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
+	FBallPalmFaceMaterials FaceMaterials;
 	/** Adds tangential sphere-surface rotation; offset-center motion is already included once. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm")
 	bool bRotatingSurfaceFriction = false;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Palm", meta = (ClampMin = "0.0001"))
 	double MaximumCurveError = 0.02;
 	bool IsValid() const;
+	FTransform WorldTransform(const FVector &ControllerPosition, const FQuat &ControllerOrientation) const
+	{
+		return FTransform(ControllerOrientation * RotationOffset.Quaternion(),
+						  ControllerPosition + ControllerOrientation.RotateVector(CenterOffset));
+	}
 	bool operator==(const FBallPalmSettings &B) const
 	{
-		return Radius == B.Radius && CenterOffset == B.CenterOffset && Material.Restitution == B.Material.Restitution &&
-			   Material.Friction == B.Material.Friction && Material.bOverride == B.Material.bOverride &&
-			   bRotatingSurfaceFriction == B.bRotatingSurfaceFriction && MaximumCurveError == B.MaximumCurveError;
+		auto Same = [](const FBallSurfaceMaterial &A, const FBallSurfaceMaterial &C) {
+			return A.Restitution == C.Restitution && A.Friction == C.Friction && A.bOverride == C.bOverride;
+		};
+		return Shape == B.Shape && BoxDimensions == B.BoxDimensions && RoundRadius == B.RoundRadius &&
+			   CCDDistanceTolerance == B.CCDDistanceTolerance && MaximumCCDIterations == B.MaximumCCDIterations &&
+			   RotationOffset == B.RotationOffset && FaceMaterials.bEnabled == B.FaceMaterials.bEnabled &&
+			   Same(FaceMaterials.Front, B.FaceMaterials.Front) && Same(FaceMaterials.Back, B.FaceMaterials.Back) &&
+			   Same(FaceMaterials.Side, B.FaceMaterials.Side) && Radius == B.Radius && CenterOffset == B.CenterOffset &&
+			   Material.Restitution == B.Material.Restitution && Material.Friction == B.Material.Friction &&
+			   Material.bOverride == B.Material.bOverride && bRotatingSurfaceFriction == B.bRotatingSurfaceFriction &&
+			   MaximumCurveError == B.MaximumCurveError;
 	}
 };
 USTRUCT(BlueprintType)
@@ -69,6 +119,10 @@ struct FOURSQUAREVR_API FBallHandTrackingSettings
 	double MaximumSpeed = 2500;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Tracking", meta = (ClampMin = "1"))
 	double MaximumAngularSpeed = 80;
+	/** Shortest-arc reconstruction cannot infer revolutions. Reject ambiguous large sample deltas. Radians. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Tracking",
+			  meta = (ClampMin = "0.01", ClampMax = "3.13"))
+	double MaximumSampleRotation = 2.8;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Tracking", meta = (ClampMin = "1"))
 	double MaximumAcceleration = 200000;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball|Tracking", meta = (ClampMin = "1"))
@@ -81,8 +135,9 @@ struct FOURSQUAREVR_API FBallHandTrackingSettings
 		return MaximumSampleGap == B.MaximumSampleGap && MaximumExtrapolation == B.MaximumExtrapolation &&
 			   ExtrapolationFilterSeconds == B.ExtrapolationFilterSeconds &&
 			   MaximumExtrapolationFilterError == B.MaximumExtrapolationFilterError && MaximumSpeed == B.MaximumSpeed &&
-			   MaximumAngularSpeed == B.MaximumAngularSpeed && MaximumAcceleration == B.MaximumAcceleration &&
-			   MaximumHeadSpeed == B.MaximumHeadSpeed && MaximumReach == B.MaximumReach;
+			   MaximumAngularSpeed == B.MaximumAngularSpeed && MaximumSampleRotation == B.MaximumSampleRotation &&
+			   MaximumAcceleration == B.MaximumAcceleration && MaximumHeadSpeed == B.MaximumHeadSpeed &&
+			   MaximumReach == B.MaximumReach;
 	}
 };
 /** Numeric observation time, NOT a fabricated hardware sensor timestamp. */
@@ -114,6 +169,7 @@ struct FOURSQUAREVR_API FBallHandSample
 };
 namespace BallMotionLimits
 {
+inline constexpr uint32 GeometryVersion = 2; // Stage 4.1 rigid quaternion trajectories / rounded boxes.
 inline constexpr int32 Hands = 8, Kinematics = 4, Colliders = Hands + Kinematics, SegmentsPerCollider = 8,
 					   Segments = Colliders * SegmentsPerCollider;
 inline constexpr uint64 HandNamespace = 0x8000000000000000ull, KinematicNamespace = 0xc000000000000000ull,

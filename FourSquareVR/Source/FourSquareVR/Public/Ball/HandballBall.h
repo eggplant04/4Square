@@ -9,6 +9,8 @@
 class USphereComponent;
 class UStaticMeshComponent;
 class UBallSimulationSubsystem;
+class UBallNetworkComponent;
+struct FBallNetworkSnapshot;
 
 /** Stage 3 standalone/server ball. Custom snapshots/prediction are deliberately deferred. */
 UCLASS(Blueprintable)
@@ -40,6 +42,7 @@ class FOURSQUAREVR_API AHandballBall : public AActor
 	TObjectPtr<USphereComponent> CollisionProxy;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ball")
 	TObjectPtr<UStaticMeshComponent> VisualMesh;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ball|Network") TObjectPtr<UBallNetworkComponent> Network;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, CallInEditor, Category = "Ball|Test")
 	bool ResetBall();
@@ -89,6 +92,11 @@ class FOURSQUAREVR_API AHandballBall : public AActor
 	{
 		return bInitialized;
 	}
+	const FBallPhysicsConfig &GetRuntimePhysics() const
+	{
+		return RuntimePhysics;
+	}
+	bool ApplyAuthoritativeSnapshot(const FBallNetworkSnapshot &Snapshot);
 
   private:
 	friend class UBallSimulationSubsystem;

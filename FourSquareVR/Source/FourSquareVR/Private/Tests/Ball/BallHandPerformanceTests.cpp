@@ -14,7 +14,7 @@
 
 namespace
 {
-constexpr auto Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
+constexpr auto HandPerformanceFlags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
 struct FProfileWorld
 {
 	UWorld *W = UWorld::CreateWorld(EWorldType::Game, false);
@@ -65,7 +65,7 @@ FBallMotionFrame MotionFrame(uint64 Frame, bool Stress = false)
 }
 } // namespace
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandEnginePerformance,
-								 "FourSquareVR.Ball.HandPerformance.EngineCourtEightHandsFourProxiesAndReplay", Flags)
+								 "FourSquareVR.Ball.HandPerformance.EngineCourtEightHandsFourProxiesAndReplay", HandPerformanceFlags)
 bool FHandEnginePerformance::RunTest(const FString &)
 {
 	TGuardValue<uint64> Restore(GFrameCounter, GFrameCounter);
@@ -188,12 +188,13 @@ bool FHandEnginePerformance::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandCapturePerformance,
-								 "FourSquareVR.Ball.HandPerformance.BoundedTrajectoryReconstructionAndMemory", Flags)
+								 "FourSquareVR.Ball.HandPerformance.BoundedTrajectoryReconstructionAndMemory", HandPerformanceFlags)
 bool FHandCapturePerformance::RunTest(const FString &)
 {
 	FBallHandPoseHistory Histories[8];
 	FBallHandTrackingSettings T;
 	FBallPalmSettings Palm;
+	Palm.Shape = EBallPalmShape::Sphere;
 	SIZE_T RawBytes = 0;
 	for (int32 K = 0; K < 8; ++K)
 	{
@@ -243,7 +244,7 @@ bool FHandCapturePerformance::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandKernelPerformance, "FourSquareVR.Ball.HandPerformance.RelativeSphereCCDKernel",
-								 Flags)
+								 HandPerformanceFlags)
 bool FHandKernelPerformance::RunTest(const FString &)
 {
 	const auto F = MotionFrame(0);
@@ -261,7 +262,7 @@ bool FHandKernelPerformance::RunTest(const FString &)
 		for (int32 I = 0; I < 2048; ++I)
 		{
 			FBallContact C;
-			if (FBallHandCollisionSolver::Sweep(F, F.Colliders[I % 8], Q, C))
+			if (FBallHandCollisionSolver::Query(F, F.Colliders[I % 8], Q, C) == EBallQueryResult::Contact)
 			{
 				++Hits;
 				Sum += C.TimeOfImpact;
@@ -270,7 +271,7 @@ bool FHandKernelPerformance::RunTest(const FString &)
 		Times.Add((FPlatformTime::Seconds() - Start) * 1.e6);
 	}
 	FBallContact C;
-	TestTrue(TEXT("Representative moving sphere contact"), FBallHandCollisionSolver::Sweep(F, F.Colliders[0], Q, C));
+	TestTrue(TEXT("Representative moving sphere contact"), FBallHandCollisionSolver::Query(F, F.Colliders[0], Q, C) == EBallQueryResult::Contact);
 	const double Expected = 50.0 / (100 - (F.Segments[0].End.X - F.Segments[0].Start.X));
 	TestEqual(TEXT("Kernel retains analytic TOI while profiled"), C.TimeOfImpact, Expected, 1.e-9);
 	TestTrue(TEXT("Work retained"), Hits > 0 && Sum > 0);

@@ -70,6 +70,7 @@ class FOURSQUAREVR_API UBallSimulationSubsystem : public UWorldSubsystem
 	uint32 RegisterKinematicSource(UBallKinematicColliderComponent *Source);
 	void UnregisterKinematicSource(UBallKinematicColliderComponent *Source);
 	double GetTrackingTimelineSeconds() const;
+	double MapMonotonicToTimeline(double Stamp) const;
 	uint32 GetTrackingTimebase() const
 	{
 		return Clock.GetTimebase();
@@ -78,6 +79,11 @@ class FOURSQUAREVR_API UBallSimulationSubsystem : public UWorldSubsystem
 	{
 		return MotionHistory;
 	}
+	FGuid GetEpoch() const
+	{
+		return Epoch;
+	}
+	void ForceNetworkBaselines();
 
   private:
 	FBallSimulationTickFunction TickFunction;
@@ -97,6 +103,8 @@ class FOURSQUAREVR_API UBallSimulationSubsystem : public UWorldSubsystem
 	uint32 NextParticipantId = 1, NextKinematicId = 1;
 	double TrackingTimeOrigin = 0, LastMotionBuildMicroseconds = 0, PeakMotionBuildMicroseconds = 0;
 	FIntVector LastWorldOrigin = FIntVector::ZeroValue;
+	double NetworkInputCushionRemaining = 0;
+	double TrackingMonotonicOrigin = 0, LastNetworkTick = 0;
 	void DiscoverLocalHands();
 	void ResetMotionTimebase();
 };

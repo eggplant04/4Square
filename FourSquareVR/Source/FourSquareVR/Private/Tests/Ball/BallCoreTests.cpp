@@ -10,7 +10,7 @@
 
 namespace
 {
-	constexpr EAutomationTestFlags Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
+	constexpr EAutomationTestFlags CoreFlags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
 	bool Advance(FBallState& State, int32 Count, const FBallPhysicsConfig& Config, const IBallCollisionWorld& World)
 	{
 		FBallSimulator Simulator;
@@ -23,7 +23,7 @@ namespace
 	}
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallGravityTest, "FourSquareVR.Ball.Core.Gravity", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallGravityTest, "FourSquareVR.Ball.Core.Gravity", CoreFlags)
 bool FBallGravityTest::RunTest(const FString& Parameters)
 {
 	FBallPhysicsConfig Config;
@@ -39,7 +39,7 @@ bool FBallGravityTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallRenderRatesTest, "FourSquareVR.Ball.Core.RenderingRateConsistency", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallRenderRatesTest, "FourSquareVR.Ball.Core.RenderingRateConsistency", CoreFlags)
 bool FBallRenderRatesTest::RunTest(const FString& Parameters)
 {
 	const int32 Rates[] = {30, 45, 60, 72, 90, 120, 144, 240};
@@ -74,7 +74,7 @@ bool FBallRenderRatesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallClockRemainderTest, "FourSquareVR.Ball.Core.ClockRemainderAndCatchUp", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallClockRemainderTest, "FourSquareVR.Ball.Core.ClockRemainderAndCatchUp", CoreFlags)
 bool FBallClockRemainderTest::RunTest(const FString& Parameters)
 {
 	FBallSimulationClock Clock;
@@ -97,7 +97,7 @@ bool FBallClockRemainderTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallClockOverrunTest, "FourSquareVR.Ball.Core.ClockOverrunRecovery", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallClockOverrunTest, "FourSquareVR.Ball.Core.ClockOverrunRecovery", CoreFlags)
 bool FBallClockOverrunTest::RunTest(const FString& Parameters)
 {
 	FBallSimulationClock Authority;
@@ -122,7 +122,7 @@ bool FBallClockOverrunTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallClockInvalidTest, "FourSquareVR.Ball.Core.ClockInvalidInput", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallClockInvalidTest, "FourSquareVR.Ball.Core.ClockInvalidInput", CoreFlags)
 bool FBallClockInvalidTest::RunTest(const FString& Parameters)
 {
 	FBallSimulationClock Clock;
@@ -139,7 +139,7 @@ bool FBallClockInvalidTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallConfigAndFinalityTest, "FourSquareVR.Ball.Core.ConfigurationAndFinality", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallConfigAndFinalityTest, "FourSquareVR.Ball.Core.ConfigurationAndFinality", CoreFlags)
 bool FBallConfigAndFinalityTest::RunTest(const FString& Parameters)
 {
 	FBallPhysicsConfig Physics;
@@ -173,7 +173,7 @@ bool FBallConfigAndFinalityTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallSequenceTest, "FourSquareVR.Ball.Core.SequenceWrap", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallSequenceTest, "FourSquareVR.Ball.Core.SequenceWrap", CoreFlags)
 bool FBallSequenceTest::RunTest(const FString& Parameters)
 {
 	TestTrue(TEXT("Normal newer"), FBallFinalityPolicy::IsSequenceNewer(12, 11));
@@ -184,7 +184,7 @@ bool FBallSequenceTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallDampingAndRotationTest, "FourSquareVR.Ball.Core.DampingAndAngularIntegration", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallDampingAndRotationTest, "FourSquareVR.Ball.Core.DampingAndAngularIntegration", CoreFlags)
 bool FBallDampingAndRotationTest::RunTest(const FString& Parameters)
 {
 	FBallPhysicsConfig Config;
@@ -211,7 +211,7 @@ bool FBallDampingAndRotationTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallZeroAndFiniteTest, "FourSquareVR.Ball.Core.ZeroAndInvalidState", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallZeroAndFiniteTest, "FourSquareVR.Ball.Core.ZeroAndInvalidState", CoreFlags)
 bool FBallZeroAndFiniteTest::RunTest(const FString& Parameters)
 {
 	FBallPhysicsConfig Config;
@@ -233,7 +233,7 @@ bool FBallZeroAndFiniteTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallInputsTest, "FourSquareVR.Ball.Core.RecordedForceOrderingAndVersions", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallInputsTest, "FourSquareVR.Ball.Core.RecordedForceOrderingAndVersions", CoreFlags)
 bool FBallInputsTest::RunTest(const FString& Parameters)
 {
 	FBallPhysicsConfig Config;
@@ -264,7 +264,7 @@ bool FBallInputsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallSubdivisionTest, "FourSquareVR.Ball.Core.SubdivisionAndFailureAtomicity", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallSubdivisionTest, "FourSquareVR.Ball.Core.SubdivisionAndFailureAtomicity", CoreFlags)
 bool FBallSubdivisionTest::RunTest(const FString& Parameters)
 {
 	FBallPhysicsConfig Config;
@@ -283,7 +283,7 @@ bool FBallSubdivisionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallAnalyticQueryTest, "FourSquareVR.Ball.Core.AnalyticQueryAndContactResponse", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallAnalyticQueryTest, "FourSquareVR.Ball.Core.AnalyticQueryAndContactResponse", CoreFlags)
 bool FBallAnalyticQueryTest::RunTest(const FString& Parameters)
 {
 	FRecordedBallCollisionWorld World;
@@ -314,7 +314,7 @@ bool FBallAnalyticQueryTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallInstrumentationTest, "FourSquareVR.Ball.Core.PerformanceCounters", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallInstrumentationTest, "FourSquareVR.Ball.Core.PerformanceCounters", CoreFlags)
 bool FBallInstrumentationTest::RunTest(const FString& Parameters)
 {
 	FBallSimulator Simulator;
@@ -335,7 +335,7 @@ bool FBallInstrumentationTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallConfigurableFrequencyTest, "FourSquareVR.Ball.Core.ConfigurableFixedFrequency", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallConfigurableFrequencyTest, "FourSquareVR.Ball.Core.ConfigurableFixedFrequency", CoreFlags)
 bool FBallConfigurableFrequencyTest::RunTest(const FString& Parameters)
 {
 	for (const double Frequency : {60.0, 100.0, 240.0})
@@ -368,7 +368,7 @@ bool FBallConfigurableFrequencyTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallPersistentStateAndQueryFailureTest, "FourSquareVR.Ball.Core.PersistentStateAndQueryFailure", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBallPersistentStateAndQueryFailureTest, "FourSquareVR.Ball.Core.PersistentStateAndQueryFailure", CoreFlags)
 bool FBallPersistentStateAndQueryFailureTest::RunTest(const FString& Parameters)
 {
 	FBallState State = BallTests::RichState();

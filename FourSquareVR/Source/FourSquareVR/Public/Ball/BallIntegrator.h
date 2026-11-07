@@ -5,7 +5,8 @@
 
 struct FOURSQUAREVR_API FBallIntegrator
 {
-	static bool Kick(FBallState& State, const FVector& LinearAcceleration, const FVector& AngularAcceleration,
-		const FBallPhysicsConfig& Config, double DeltaTime);
-	static bool Drift(FBallState& State, double DeltaTime);
+	static bool ApplyVelocityLimits(FBallState &State, const FBallPhysicsConfig &Config);
+	static bool Kick(FBallState &State, const FVector &LinearAcceleration, const FVector &AngularAcceleration,
+					 const FBallPhysicsConfig &Config, double DeltaTime);
+	static bool Drift(FBallState &State, double DeltaTime);
 };

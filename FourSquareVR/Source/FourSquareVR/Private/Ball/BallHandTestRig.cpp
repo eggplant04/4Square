@@ -25,6 +25,9 @@ ABallHandTestRig::ABallHandTestRig()
 	Right->SetRelativeLocation(FVector(0, 35, 100));
 	Hands = CreateDefaultSubobject<UVRHandCollisionComponent>(TEXT("BallHandCollision"));
 	Hands->bAllowScriptedTrackingForTests = true;
+	// Diagnostic broad face (+Z) points along the scripted X swing; real devices require calibration.
+	Hands->LeftPalm.RotationOffset = FRotator(90, 0, 0);
+	Hands->RightPalm.RotationOffset = FRotator(90, 0, 0);
 	Hands->bDebugDraw = true;
 }
 void ABallHandTestRig::Tick(float Delta)
@@ -34,5 +37,11 @@ void ABallHandTestRig::Tick(float Delta)
 	{
 		Left->SetRelativeLocation(
 			FVector(-40 + Amplitude * FMath::Sin(GetWorld()->GetTimeSeconds() * 2 * PI * FrequencyHz), 0, 100));
+	}
+	if (bAnimateWrist)
+	{
+		const double Angle = -FMath::DegreesToRadians(WristAmplitudeDegrees) *
+							 FMath::Cos(GetWorld()->GetTimeSeconds() * 2 * UE_DOUBLE_PI * WristFrequencyHz);
+		Left->SetRelativeRotation(FQuat(FVector::UpVector, Angle));
 	}
 }

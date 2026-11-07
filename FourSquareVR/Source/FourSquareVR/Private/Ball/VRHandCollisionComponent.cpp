@@ -1,4 +1,5 @@
 #include "Ball/VRHandCollisionComponent.h"
+#include "Ball/BallPalmDebug.h"
 #include "Ball/BallSimulationSubsystem.h"
 #include "MotionControllerComponent.h"
 #include "Camera/CameraComponent.h"
@@ -20,7 +21,7 @@ UVRHandCollisionComponent::UVRHandCollisionComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = true;
 	PrimaryComponentTick.TickGroup = TG_PostPhysics;
-	SetIsReplicatedByDefault(false);
+	SetIsReplicatedByDefault(true);
 }
 bool UVRHandCollisionComponent::FindUniqueGrips(AActor *Actor, UMotionControllerComponent *&Left,
 												UMotionControllerComponent *&Right)
@@ -114,8 +115,12 @@ bool UVRHandCollisionComponent::AreControllersRegistered() const
 void UVRHandCollisionComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	LeftHistory.Initialize();
-	RightHistory.Initialize();
+	const auto *Pawn = Cast<APawn>(GetOwner());
+	if (GetNetMode() == NM_Standalone || (Pawn && Pawn->IsLocallyControlled()))
+	{
+		LeftHistory.Initialize();
+		RightHistory.Initialize();
+	}
 	DiscoverGripControllers();
 	System = GetWorld()->GetSubsystem<UBallSimulationSubsystem>();
 	if (System.IsValid())
@@ -156,6 +161,12 @@ void UVRHandCollisionComponent::TickComponent(float Delta, ELevelTick Type, FAct
 	const auto *Pawn = Cast<APawn>(GetOwner());
 	const bool Local =
 		bAllowScriptedTrackingForTests || (Pawn && Pawn->IsPlayerControlled() && Pawn->IsLocallyControlled());
+	if (GetNetMode() != NM_Standalone)
+	{
+		TickNetwork(Pawn && Pawn->IsPlayerControlled() && Pawn->IsLocallyControlled(), FPlatformTime::Seconds());
+		DrawDiagnostics();
+		return;
+	}
 	if (System.IsValid())
 	{
 		if (!Local && ParticipantId)
@@ -234,7 +245,7 @@ void UVRHandCollisionComponent::CaptureTracking()
 	LastWorldToMeters = WorldToMeters;
 	FBallHandObservation Base;
 	Base.CaptureSeconds = FPlatformTime::Seconds();
-	Base.TimelineSeconds = System->GetTrackingTimelineSeconds();
+	Base.TimelineSeconds = System->MapMonotonicToTimeline(Base.CaptureSeconds);
 	Base.Timebase = System->GetTrackingTimebase();
 	Base.OriginRevision = OriginRevision;
 	Base.Sequence = ++Sequence;
@@ -272,6 +283,12 @@ void UVRHandCollisionComponent::CaptureTracking()
 }
 void UVRHandCollisionComponent::BuildRecordedMotion(FBallMotionFrame &Frame, double Start)
 {
+	if (GetNetMode() != NM_Standalone)
+	{
+		if (GetOwner()->HasAuthority() && Admission)
+			Admission->BuildMotion(Start, Frame, &LeftRejection, &RightRejection);
+		return;
+	}
 	if (!RefreshConfiguration())
 	{
 		return;
@@ -312,8 +329,14 @@ void UVRHandCollisionComponent::DrawDiagnostics() const
 		}
 		const FVector Center =
 			Last->Pose.ControllerPosition + Last->Pose.ControllerOrientation.RotateVector(Palm.CenterOffset);
-		DrawDebugSphere(GetWorld(), Center, Palm.Radius, 16,
-						Last->bCollisionReady && Reason == EBallTrackingRejection::None ? Color : FColor::Red);
+		const FColor StatusColor =
+			Last->bCollisionReady && Reason == EBallTrackingRejection::None ? Color : FColor::Red;
+		if (Palm.Shape == EBallPalmShape::Sphere)
+			DrawDebugSphere(GetWorld(), Center, Palm.Radius, 16, StatusColor);
+		else
+			FBallPalmDebug::Draw(GetWorld(),
+								 Palm.WorldTransform(Last->Pose.ControllerPosition, Last->Pose.ControllerOrientation),
+								 Palm.BoxDimensions * .5, Palm.RoundRadius, StatusColor);
 		DrawDebugLine(GetWorld(), Center, Center + V * .05, FColor::Yellow);
 		DrawDebugString(GetWorld(), Center + FVector(0, 0, 12),
 						FString::Printf(TEXT("Palm P%u G%u v=%.1f %s"), ParticipantId, Last->Generation, V.Size(),
@@ -327,4 +350,8 @@ void UVRHandCollisionComponent::DrawDiagnostics() const
 		DrawDebugPoint(GetWorld(), DebugSegments[I].Start, 5, FColor::Blue);
 		DrawDebugLine(GetWorld(), DebugSegments[I].Start, DebugSegments[I].End, FColor::Green);
 	}
+}
+bool UVRHandCollisionComponent::IsHandDebugEnabled() const
+{
+	return bDebugDraw || CVarBallHandsDebug.GetValueOnGameThread() != 0;
 }

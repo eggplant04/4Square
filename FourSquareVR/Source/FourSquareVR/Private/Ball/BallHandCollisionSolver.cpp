@@ -1,5 +1,6 @@
 #include "Ball/BallHandCollisionSolver.h"
 #include "Ball/BallCollisionSolver.h"
+#include "Ball/BallPalmGeometry.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 
 const FBallMotionSegment *FBallHandCollisionSolver::SegmentAt(const FBallMotionFrame &F, const FBallColliderMotion &C,
@@ -29,6 +30,10 @@ double FBallHandCollisionSolver::Separation(const FBallMotionFrame &F, const FBa
 	{
 		return TNumericLimits<double>::Max();
 	}
+	if (C.Shape == EBallMotionShape::RoundedBox)
+		return FBallPalmGeometry::Distance(Ball, Radius, FBallPalmGeometry::CenterAt(C, *S, T),
+										   FBallPalmGeometry::OrientationAt(*S, T), C.HalfExtents, C.RoundRadius)
+			.Separation;
 	const FVector P = C.Orientation.UnrotateVector(Ball - CenterAt(*S, T));
 	if (C.Shape == EBallMotionShape::Sphere)
 	{
@@ -38,21 +43,48 @@ double FBallHandCollisionSolver::Separation(const FBallMotionFrame &F, const FBa
 	const FVector Positive(FMath::Max(Outside.X, 0.0), FMath::Max(Outside.Y, 0.0), FMath::Max(Outside.Z, 0.0));
 	return Positive.Size() + FMath::Min(Outside.GetMax(), 0.0) - Radius;
 }
-bool FBallHandCollisionSolver::Sweep(const FBallMotionFrame &F, const FBallColliderMotion &C,
-									 const FBallCollisionQuery &Q, FBallContact &Contact)
+EBallQueryResult FBallHandCollisionSolver::Query(const FBallMotionFrame &F, const FBallColliderMotion &C,
+												 const FBallCollisionQuery &Q, FBallContact &Contact)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(Handball_RelativeMotionCCD);
 	const double Begin = Q.Time.Frame == Q.StepFrame ? Q.Time.Fraction : 1;
 	const auto *S = SegmentAt(F, C, Begin);
 	if (!S)
 	{
-		return false;
+		return EBallQueryResult::Clear;
 	}
 	const double End = Q.bProximity ? Begin : Q.EndFraction;
+	// At an expired lifetime endpoint there is no outgoing sweep. SegmentAt deliberately
+	// keeps that endpoint for proximity probes, but must not extend it to a later interval.
+	if (!Q.bProximity && Begin >= S->EndFraction - 1.e-12)
+		return EBallQueryResult::Clear;
 	// Caller splits drift at every trajectory knot/lifetime edge. Never replace a curved path with its full-step chord.
 	if (!Q.bProximity && End > S->EndFraction + 1.e-10)
 	{
-		return false;
+		return EBallQueryResult::InvalidQuery;
+	}
+	if (C.Shape == EBallMotionShape::RoundedBox)
+	{
+		const auto Result = FBallPalmGeometry::Sweep(F, C, *S, Q, Contact);
+		if (Result != EBallQueryResult::Contact)
+			return Result;
+		Contact.Collider = C.Id;
+		Contact.Category = C.Category;
+		Contact.Material = C.Material;
+		if (C.FaceMaterials.bEnabled)
+		{
+			const FVector N = FBallPalmGeometry::OrientationAt(*S, FMath::Lerp(Begin, End, Contact.TimeOfImpact))
+								  .UnrotateVector(Contact.Normal);
+			Contact.Material = FMath::Abs(N.Z) >= FMath::Max(FMath::Abs(N.X), FMath::Abs(N.Y))
+								   ? (N.Z >= 0 ? C.FaceMaterials.Front : C.FaceMaterials.Back)
+								   : C.FaceMaterials.Side;
+		}
+		Contact.Participant = C.Participant;
+		Contact.OriginRevision = C.OriginRevision;
+		Contact.HandSide = uint8(C.Side);
+		Contact.FirstSample = S->FirstSample;
+		Contact.SecondSample = S->SecondSample;
+		return Result;
 	}
 	const FVector H0 = CenterAt(*S, Begin), H1 = CenterAt(*S, End);
 	FBallCollisionQuery Relative = Q;
@@ -64,7 +96,7 @@ bool FBallHandCollisionSolver::Sweep(const FBallMotionFrame &F, const FBallColli
 						  : FBallCollisionSolver::SweepBox(Relative, -C.HalfExtents, C.HalfExtents, Hit);
 	if (!bHit)
 	{
-		return false;
+		return EBallQueryResult::Clear;
 	}
 	const double Impact = FMath::Lerp(Begin, End, Hit.TimeOfImpact);
 	const FVector Center = CenterAt(*S, Impact);
@@ -81,7 +113,7 @@ bool FBallHandCollisionSolver::Sweep(const FBallMotionFrame &F, const FBallColli
 	Contact.HandSide = uint8(C.Side);
 	Contact.FirstSample = S->FirstSample;
 	Contact.SecondSample = S->SecondSample;
-	return true;
+	return EBallQueryResult::Contact;
 }
 double FBallHandCollisionSolver::MaximumRelativeTravel(const FBallMotionFrame &F, const FBallCollisionQuery &Q)
 {
@@ -95,6 +127,11 @@ double FBallHandCollisionSolver::MaximumRelativeTravel(const FBallMotionFrame &F
 			continue;
 		}
 		Maximum = FMath::Max(Maximum, (Ball - (CenterAt(*S, Q.EndFraction) - CenterAt(*S, Q.Time.Fraction))).Size());
+		const auto &C = F.Colliders[I];
+		if (C.Shape == EBallMotionShape::RoundedBox)
+			Maximum = FMath::Max(Maximum, Ball.Size() + (S->End - S->Start).Size() +
+											  FBallPalmGeometry::AngularDisplacement(*S).Size() *
+												  (C.HalfExtents.Size() + 2 * C.PivotToCenter.Size()));
 	}
 	return Maximum;
 }
@@ -120,7 +157,8 @@ bool FBallHandCollisionSolver::CouldReach(const FBallMotionFrame &F, const FVect
 	for (int32 I = 0; I < F.ColliderCount; ++I)
 	{
 		const auto &C = F.Colliders[I];
-		const double R = Radius + (C.Shape == EBallMotionShape::Sphere ? C.Radius : C.HalfExtents.Size());
+		const double R = Radius + (C.Shape == EBallMotionShape::Sphere ? C.Radius : C.HalfExtents.Size()) +
+						 (C.Shape == EBallMotionShape::RoundedBox ? 2 * C.PivotToCenter.Size() : 0);
 		for (int32 J = 0; J < C.SegmentCount; ++J)
 		{
 			const auto &S = F.Segments[C.FirstSegment + J];

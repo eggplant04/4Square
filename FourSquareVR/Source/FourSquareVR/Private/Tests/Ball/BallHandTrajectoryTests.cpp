@@ -11,14 +11,14 @@
 #include <limits>
 namespace
 {
-constexpr auto Flags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
+constexpr auto HandTrajectoryFlags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
 FBallMotionFrame Frame()
 {
 	FBallMotionFrame F;
 	F.Epoch = BallTests::State().Identity.Epoch;
 	return F;
 }
-FBallHandObservation Pose(double Time, FVector Position, uint32 Sequence)
+FBallHandObservation HandTrajectoryPose(double Time, FVector Position, uint32 Sequence)
 {
 	FBallHandObservation P;
 	P.CaptureSeconds = P.TimelineSeconds = Time;
@@ -27,7 +27,7 @@ FBallHandObservation Pose(double Time, FVector Position, uint32 Sequence)
 	P.Sequence = Sequence;
 	return P;
 }
-FBallPhysicsConfig Config()
+FBallPhysicsConfig HandTrajectoryConfig()
 {
 	FBallPhysicsConfig C;
 	C.Gravity = FVector::ZeroVector;
@@ -35,39 +35,39 @@ FBallPhysicsConfig Config()
 	return C;
 }
 } // namespace
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandInvalidPose, "FourSquareVR.Ball.HandTrajectory.InvalidStaleAndFastSamples", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandInvalidPose, "FourSquareVR.Ball.HandTrajectory.InvalidStaleAndFastSamples", HandTrajectoryFlags)
 bool FHandInvalidPose::RunTest(const FString &)
 {
 	FBallHandPoseHistory H;
 	H.Initialize(4);
 	FBallHandTrackingSettings T;
-	H.Add(Pose(0, FVector::ZeroVector, 1), T);
-	H.Add(Pose(.01, FVector(1, 0, 0), 2), T);
-	auto Bad = Pose(.02, FVector(2, 0, 0), 3);
+	H.Add(HandTrajectoryPose(0, FVector::ZeroVector, 1), T);
+	H.Add(HandTrajectoryPose(.01, FVector(1, 0, 0), 2), T);
+	auto Bad = HandTrajectoryPose(.02, FVector(2, 0, 0), 3);
 	Bad.ControllerPosition.X = std::numeric_limits<double>::quiet_NaN();
 	TestTrue(TEXT("NaN refused"), H.Add(Bad, T) == EBallTrackingRejection::InvalidPose);
 	auto F = Frame();
 	EBallTrackingRejection R;
 	TestTrue(TEXT("Invalid pose cannot extend last valid trajectory"),
 			 H.BuildMotion(.02, {}, T, 1, EBallHandSide::Left, F, R) && F.ColliderCount == 0);
-	H.Add(Pose(.03, FVector(3, 0, 0), 4), T);
-	H.Add(Pose(.04, FVector(4, 0, 0), 5), T);
-	TestTrue(TEXT("Sample gap rejected"), H.Add(Pose(.2, FVector(20, 0, 0), 6), T) == EBallTrackingRejection::Stale);
-	H.Add(Pose(.21, FVector(21, 0, 0), 7), T);
-	auto Far = Pose(.22, FVector(22, 0, 0), 8);
+	H.Add(HandTrajectoryPose(.03, FVector(3, 0, 0), 4), T);
+	H.Add(HandTrajectoryPose(.04, FVector(4, 0, 0), 5), T);
+	TestTrue(TEXT("Sample gap rejected"), H.Add(HandTrajectoryPose(.2, FVector(20, 0, 0), 6), T) == EBallTrackingRejection::Stale);
+	H.Add(HandTrajectoryPose(.21, FVector(21, 0, 0), 7), T);
+	auto Far = HandTrajectoryPose(.22, FVector(22, 0, 0), 8);
 	Far.HeadPosition = FVector(1000, 0, 0);
 	TestTrue(TEXT("Unrealistic reach rejected"), H.Add(Far, T) == EBallTrackingRejection::ExcessiveReach);
-	auto InvalidQ = Pose(.23, FVector(23, 0, 0), 9);
+	auto InvalidQ = HandTrajectoryPose(.23, FVector(23, 0, 0), 9);
 	InvalidQ.ControllerOrientation = FQuat(0, 0, 0, 0);
 	TestTrue(TEXT("Non-unit quaternion rejected"), H.Add(InvalidQ, T) == EBallTrackingRejection::InvalidPose);
-	H.Add(Pose(.24, FVector::ZeroVector, 10), T);
-	auto Spin = Pose(.25, FVector::ZeroVector, 11);
+	H.Add(HandTrajectoryPose(.24, FVector::ZeroVector, 10), T);
+	auto Spin = HandTrajectoryPose(.25, FVector::ZeroVector, 11);
 	Spin.ControllerOrientation = FQuat(FVector::UpVector, PI);
-	TestTrue(TEXT("Excessive angular speed rejected"), H.Add(Spin, T) == EBallTrackingRejection::ExcessiveVelocity);
+	TestTrue(TEXT("Ambiguous half-turn rejected before guessing a trajectory"), H.Add(Spin, T) == EBallTrackingRejection::UnsupportedRotation);
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandExtrapolation, "FourSquareVR.Ball.HandTrajectory.BoundedExtrapolationAndStorage",
-								 Flags)
+								 HandTrajectoryFlags)
 bool FHandExtrapolation::RunTest(const FString &)
 {
 	FBallHandPoseHistory H;
@@ -75,7 +75,7 @@ bool FHandExtrapolation::RunTest(const FString &)
 	FBallHandTrackingSettings T;
 	for (int32 I = 0; I < 3; ++I)
 	{
-		H.Add(Pose(I * .01, FVector(I, 0, 0), I + 1), T);
+		H.Add(HandTrajectoryPose(I * .01, FVector(I, 0, 0), I + 1), T);
 	}
 	auto F = Frame();
 	EBallTrackingRejection R;
@@ -92,26 +92,27 @@ bool FHandExtrapolation::RunTest(const FString &)
 	const SIZE_T Bytes = H.GetAllocatedBytes();
 	for (int32 I = 3; I < 1000; ++I)
 	{
-		H.Add(Pose(I * .01, FVector(I, 0, 0), I + 1), T);
+		H.Add(HandTrajectoryPose(I * .01, FVector(I, 0, 0), I + 1), T);
 	}
 	TestEqual(TEXT("Raw observation ring stays bounded"), H.GetAllocatedBytes(), Bytes);
 	TestTrue(TEXT("Latest sample remains continuous"), H.GetLatest()->bCollisionReady);
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandOffsetCurve,
-								 "FourSquareVR.Ball.HandTrajectory.RotatingPalmOffsetIsNotControllerVelocity", Flags)
+								 "FourSquareVR.Ball.HandTrajectory.RotatingPalmOffsetIsNotControllerVelocity", HandTrajectoryFlags)
 bool FHandOffsetCurve::RunTest(const FString &)
 {
 	FBallHandPoseHistory H;
 	H.Initialize();
 	FBallHandTrackingSettings T;
 	T.MaximumAngularSpeed = 1000;
-	H.Add(Pose(0, FVector::ZeroVector, 1), T);
-	H.Add(Pose(.01, FVector::ZeroVector, 2), T);
-	auto P = Pose(.02, FVector::ZeroVector, 3);
+	H.Add(HandTrajectoryPose(0, FVector::ZeroVector, 1), T);
+	H.Add(HandTrajectoryPose(.01, FVector::ZeroVector, 2), T);
+	auto P = HandTrajectoryPose(.02, FVector::ZeroVector, 3);
 	P.ControllerOrientation = FQuat(FVector::UpVector, PI / 2);
 	H.Add(P, T);
 	FBallPalmSettings Palm;
+	Palm.Shape = EBallPalmShape::Sphere; // Retain the original sphere offset-arc regression.
 	Palm.CenterOffset = FVector(10, 0, 0);
 	Palm.MaximumCurveError = .04;
 	auto F = Frame();
@@ -140,7 +141,7 @@ bool FHandOffsetCurve::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandRenderClock,
-								 "FourSquareVR.Ball.HandTrajectory.CausalTrackingAcrossRenderingRates", Flags)
+								 "FourSquareVR.Ball.HandTrajectory.CausalTrackingAcrossRenderingRates", HandTrajectoryFlags)
 bool FHandRenderClock::RunTest(const FString &)
 {
 	FVector Baseline;
@@ -151,6 +152,7 @@ bool FHandRenderClock::RunTest(const FString &)
 		P.Initialize();
 		FBallHandTrackingSettings T;
 		FBallPalmSettings Palm;
+	Palm.Shape = EBallPalmShape::Sphere;
 		Palm.Material.Friction = 0;
 		FBallMotionHistory H;
 		H.Initialize(256);
@@ -171,7 +173,7 @@ bool FHandRenderClock::RunTest(const FString &)
 			while (NextSample / 90.0 <= Now + 1.e-12)
 			{
 				double Time = NextSample / 90.0;
-				P.Add(Pose(Time, FVector(-100 + 100 * Time, 0, 0), NextSample + 1), T);
+				P.Add(HandTrajectoryPose(Time, FVector(-100 + 100 * Time, 0, 0), NextSample + 1), T);
 				++NextSample;
 			}
 			if (!Clock.BeginRenderFrame(Dt))
@@ -191,7 +193,7 @@ bool FHandRenderClock::RunTest(const FString &)
 				}
 				auto Inputs = BallTests::Inputs(S);
 				Inputs.MotionTimebase = Inputs.MotionRevision = 1;
-				if (Sim.SimulateStep(S, Inputs, Config(), W, O) != EBallStepResult::Success)
+				if (Sim.SimulateStep(S, Inputs, HandTrajectoryConfig(), W, O) != EBallStepResult::Success)
 				{
 					AddError(TEXT("Causal simulation failed"));
 					return false;
@@ -216,7 +218,7 @@ bool FHandRenderClock::RunTest(const FString &)
 	}
 	return true;
 }
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandTangent, "FourSquareVR.Ball.HandTrajectory.ExactAndNearTangency", Flags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandTangent, "FourSquareVR.Ball.HandTrajectory.ExactAndNearTangency", HandTrajectoryFlags)
 bool FHandTangent::RunTest(const FString &)
 {
 	auto F = Frame();
@@ -231,16 +233,16 @@ bool FHandTangent::RunTest(const FString &)
 	Q.Radius = 3;
 	FBallContact Hit;
 	TestFalse(TEXT("Exact tangent does not create repeated zero-time contact"),
-			  FBallHandCollisionSolver::Sweep(F, F.Colliders[0], Q, Hit));
+			  FBallHandCollisionSolver::Query(F, F.Colliders[0], Q, Hit) == EBallQueryResult::Contact);
 	Q.Start.Y = Q.End.Y = 9.999;
-	TestTrue(TEXT("Near tangent has real closing contact"), FBallHandCollisionSolver::Sweep(F, F.Colliders[0], Q, Hit));
+	TestTrue(TEXT("Near tangent has real closing contact"), FBallHandCollisionSolver::Query(F, F.Colliders[0], Q, Hit) == EBallQueryResult::Contact);
 	const double Expected = (20 - FMath::Sqrt(100 - 9.999 * 9.999)) / 40;
 	TestEqual(TEXT("Near-tangent root"), Hit.TimeOfImpact, Expected, 1.e-9);
 	TestTrue(TEXT("Normal normalized"), Hit.Normal.IsUnit(1.e-9));
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandBoxCCD, "FourSquareVR.Ball.HandTrajectory.TranslatingOrientedBoxAnalyticCCD",
-								 Flags)
+								 HandTrajectoryFlags)
 bool FHandBoxCCD::RunTest(const FString &)
 {
 	auto F = Frame();
@@ -265,7 +267,7 @@ bool FHandBoxCCD::RunTest(const FString &)
 	Inputs.MotionTimebase = Inputs.MotionRevision = 1;
 	FBallSimulator Sim;
 	FBallStepOutput O;
-	TestTrue(TEXT("Oriented recorded box"), Sim.SimulateStep(S, Inputs, Config(), W, O) == EBallStepResult::Success);
+	TestTrue(TEXT("Oriented recorded box"), Sim.SimulateStep(S, Inputs, HandTrajectoryConfig(), W, O) == EBallStepResult::Success);
 	const double TOI = (20 - (5 * FMath::Sqrt(2.0) + 3)) / 20;
 	TestEqual(TEXT("Rounded vertex TOI"), O.Events[0].Time.Fraction, TOI, 1.e-8);
 	TestEqual(TEXT("Relative response"), S.LinearVelocity.X, 4320.0, 1.e-6);
@@ -273,7 +275,7 @@ bool FHandBoxCCD::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandCheckpointV3, "FourSquareVR.Ball.HandTrajectory.FullPairCheckpointAndLegacyV2",
-								 Flags)
+								 HandTrajectoryFlags)
 bool FHandCheckpointV3::RunTest(const FString &)
 {
 	auto S = BallTests::RichState();
@@ -305,15 +307,15 @@ bool FHandCheckpointV3::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandFilterConfiguration,
-								 "FourSquareVR.Ball.HandTrajectory.FilterBoundAndImmutableShapeVersions", Flags)
+								 "FourSquareVR.Ball.HandTrajectory.FilterBoundAndImmutableShapeVersions", HandTrajectoryFlags)
 bool FHandFilterConfiguration::RunTest(const FString &)
 {
 	FBallHandPoseHistory H;
 	H.Initialize();
 	FBallHandTrackingSettings T;
-	H.Add(Pose(0, FVector::ZeroVector, 1), T);
-	H.Add(Pose(.01, FVector(1, 0, 0), 2), T);
-	H.Add(Pose(.02, FVector(3, 0, 0), 3), T);
+	H.Add(HandTrajectoryPose(0, FVector::ZeroVector, 1), T);
+	H.Add(HandTrajectoryPose(.01, FVector(1, 0, 0), 2), T);
+	H.Add(HandTrajectoryPose(.02, FVector(3, 0, 0), 3), T);
 	const auto *S = H.GetLatest();
 	TestTrue(TEXT("Extrapolation filter contributes bounded additional error"),
 			 (S->ExtrapolationVelocity - S->LinearVelocity).Size() * T.MaximumExtrapolation <=
@@ -324,14 +326,15 @@ bool FHandFilterConfiguration::RunTest(const FString &)
 	TestTrue(TEXT("Recorded extrapolated movement and response velocity agree"),
 			 (F.Segments[0].End - F.Segments[0].Start).Equals(S->ExtrapolationVelocity * F.DeltaTime, 1.e-9));
 	FBallPalmSettings NewPalm;
+	NewPalm.Shape = EBallPalmShape::Sphere;
 	NewPalm.Radius = 30;
 	F = Frame();
 	H.BuildMotion(.01, NewPalm, T, 1, EBallHandSide::Left, F, R, 2);
 	TestEqual(TEXT("New radius cannot reinterpret old samples"), F.ColliderCount, 0);
-	auto P = Pose(.03, FVector(4, 0, 0), 4);
+	auto P = HandTrajectoryPose(.03, FVector(4, 0, 0), 4);
 	P.ConfigurationVersion = 2;
 	H.Add(P, T);
-	P = Pose(.04, FVector(5, 0, 0), 5);
+	P = HandTrajectoryPose(.04, FVector(5, 0, 0), 5);
 	P.ConfigurationVersion = 2;
 	H.Add(P, T);
 	F = Frame();
@@ -342,7 +345,7 @@ bool FHandFilterConfiguration::RunTest(const FString &)
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandEpochBoundary, "FourSquareVR.Ball.HandTrajectory.CrossWorldEpochCannotReplay",
-								 Flags)
+								 HandTrajectoryFlags)
 bool FHandEpochBoundary::RunTest(const FString &)
 {
 	auto F = Frame();
@@ -359,13 +362,13 @@ bool FHandEpochBoundary::RunTest(const FString &)
 	FBallSimulator Sim;
 	FBallStepOutput O;
 	TestTrue(TEXT("Same numeric frame/version from another world rejected"),
-			 Sim.SimulateStep(S, Inputs, Config(), W, O) == EBallStepResult::IncompatibleEnvironment);
+			 Sim.SimulateStep(S, Inputs, HandTrajectoryConfig(), W, O) == EBallStepResult::IncompatibleEnvironment);
 	TestTrue(TEXT("Whole state unchanged"), BallTests::ExactlyEqual(S, Before));
 	TestEqual(TEXT("No speculative events escape"), O.EventCount, 0);
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHandContactCapacity,
-								 "FourSquareVR.Ball.HandTrajectory.ManifoldCapacityFailsAtomically", Flags)
+								 "FourSquareVR.Ball.HandTrajectory.ManifoldCapacityFailsAtomically", HandTrajectoryFlags)
 bool FHandContactCapacity::RunTest(const FString &)
 {
 	auto F = Frame();
@@ -393,7 +396,7 @@ bool FHandContactCapacity::RunTest(const FString &)
 	FBallSimulator Sim;
 	FBallStepOutput O;
 	TestTrue(TEXT("Overfull simultaneous manifold is explicit"),
-			 Sim.SimulateStep(S, Inputs, Config(), W, O) == EBallStepResult::ContactCapacity);
+			 Sim.SimulateStep(S, Inputs, HandTrajectoryConfig(), W, O) == EBallStepResult::ContactCapacity);
 	TestTrue(TEXT("No partial positional/velocity/counter changes"), BallTests::ExactlyEqual(S, Before));
 	TestTrue(TEXT("No partial events"), O.EventCount == 0 && O.ContactCount == 0);
 	return true;
