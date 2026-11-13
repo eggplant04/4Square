@@ -1,4 +1,5 @@
 #include "Handball.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "HandballSimulationComponent.h"
@@ -26,10 +27,35 @@ void AHandball::BeginPlay()
 
     BallState.Position = GetActorLocation();
     BallState.Velocity = FVector::ZeroVector;
+
+    SpeedMaterial = BallMesh->CreateDynamicMaterialInstance(0);
+    UpdateSpeedMaterial();
+}
+
+void AHandball::UpdateSpeedMaterial()
+{
+    if (!SpeedMaterial || !SimulationComponent)
+    {
+        return;
+    }
+
+    const float MaxSpeed = SimulationComponent->GetMaxBallSpeed();
+
+    const float SpeedAlpha = MaxSpeed > 0.0f
+        ? FMath::Clamp(BallState.Velocity.Size() / MaxSpeed, 0.0f, 1.0f)
+        : 0.0f;
+
+    SpeedMaterial->SetScalarParameterValue(
+        TEXT("SpeedAlpha"),
+        SpeedAlpha
+    );
 }
 
 void AHandball::SetBallState(const FHandballState& NewState)
 {
     BallState = NewState;
+
     SetActorLocation(BallState.Position);
+
+    UpdateSpeedMaterial();
 }

@@ -8,6 +8,7 @@
 class USceneComponent;
 class UStaticMeshComponent; 
 class UHandballSimulationComponent;
+class UMaterialInstanceDynamic;
 
 UCLASS()
 class FOURSQUARE_API AHandball : public AActor
@@ -43,4 +44,9 @@ protected:
     
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Handball")
     FHandballState BallState;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> SpeedMaterial;
+
+    void UpdateSpeedMaterial();
 };

@@ -251,6 +251,16 @@ void UHandballSimulationComponent::TickComponent(
     }
 }
 
+void UHandballSimulationComponent::ClampBallSpeed(
+    FHandballState& State) const
+{
+    if (MaxBallSpeed > 0.0f)
+    {
+        State.Velocity =
+            State.Velocity.GetClampedToMaxSize(MaxBallSpeed);
+    }
+}
+
 bool UHandballSimulationComponent::FindBarrierHit(
     const FVector& Start,
     const FVector& End,
@@ -404,6 +414,8 @@ void UHandballSimulationComponent::SimulateStep(
     const TArray<FHandballHandMotion>& HandMotions) const
 {
     State.Velocity.Z += Gravity * DeltaTime;
+    
+    ClampBallSpeed(State);
 
     float RemainingTime = DeltaTime;
 
@@ -478,7 +490,10 @@ void UHandballSimulationComponent::SimulateStep(
         if (bHandHit)
         {
             Normal = BestHandHit.Normal;
-            SurfaceVelocity = BestHandHit.HandVelocity;
+
+            SurfaceVelocity =
+                BestHandHit.HandVelocity * HandHitStrength;
+
             Penetration = BestHandHit.Penetration;
 
             State.Position =
@@ -509,6 +524,7 @@ void UHandballSimulationComponent::SimulateStep(
             (FMath::Max(Penetration, 0.0f) + SurfaceOffset);
 
         ResolveBounce(State, Normal, SurfaceVelocity);
+        ClampBallSpeed(State);
 
         RemainingTime *= 1.0f - FirstHitTime;
     }

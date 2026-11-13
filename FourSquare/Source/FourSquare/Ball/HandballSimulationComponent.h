@@ -33,6 +33,11 @@ public:
         float DeltaTime,
         const TArray<FHandballHandMotion>& HandMotions
     ) const;
+    
+    float GetMaxBallSpeed() const
+    {
+        return MaxBallSpeed;
+    }
 
 protected:
     virtual void BeginPlay() override;
@@ -53,6 +58,14 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Handball|Physics",
         meta = (ClampMin = "0.0"))
     float MinBounceSpeed = 30.0f;
+    
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Physics", meta = (ClampMin = "0.0"))
+    float MaxBallSpeed = 2500.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Hands", meta = (ClampMin = "0.0"))
+    float HandHitStrength = 1.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Handball|Collision",
         meta = (ClampMin = "0.1"))
@@ -82,6 +95,8 @@ private:
     };
 
     TArray<FTrackedHand> TrackedHands;
+
+    void ClampBallSpeed(FHandballState& State) const;
 
     bool FindBarrierHit(
         const FVector& Start,
