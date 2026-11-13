@@ -1,27 +1,35 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+#include "Handball.h"
+#include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "HandballSimulationComponent.h"
 
-
-#include "FourSquare/Ball/HandBall.h"
-
-// Sets default values
-AHandBall::AHandBall()
+AHandball::AHandball()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bCanEverTick = false;
 
+    SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+    RootComponent = SceneRoot;
+
+    BallMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BallMesh"));
+    BallMesh->SetupAttachment(SceneRoot);
+
+    BallMesh->SetSimulatePhysics(false);
+    BallMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    BallMesh->SetGenerateOverlapEvents(false);
+
+    SimulationComponent = CreateDefaultSubobject<UHandballSimulationComponent>(TEXT("SimulationComponent"));
 }
 
-// Called when the game starts or when spawned
-void AHandBall::BeginPlay()
+void AHandball::BeginPlay()
 {
-	Super::BeginPlay();
-	
+    Super::BeginPlay();
+
+    BallState.Position = GetActorLocation();
+    BallState.Velocity = FVector::ZeroVector;
 }
 
-// Called every frame
-void AHandBall::Tick(float DeltaTime)
+void AHandball::SetBallState(const FHandballState& NewState)
 {
-	Super::Tick(DeltaTime);
-
+    BallState = NewState;
+    SetActorLocation(BallState.Position);
 }
-

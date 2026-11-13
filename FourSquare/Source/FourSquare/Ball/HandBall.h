@@ -1,26 +1,46 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "HandBall.generated.h"
+#include "HandballTypes.h"
+#include "Handball.generated.h"
+
+class USceneComponent;
+class UStaticMeshComponent; 
+class UHandballSimulationComponent;
 
 UCLASS()
-class FOURSQUARE_API AHandBall : public AActor
+class FOURSQUARE_API AHandball : public AActor
 {
-	GENERATED_BODY()
-	
-public:	
-	// Sets default values for this actor's properties
-	AHandBall();
+    GENERATED_BODY()
+
+public:
+    AHandball();
+    
+    UHandballSimulationComponent* GetSimulationComponent() const
+    {
+        return SimulationComponent;
+    }
+
+    const FHandballState& GetBallState() const
+    {
+        return BallState;
+    }
+
+    void SetBallState(const FHandballState& NewState);
 
 protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
+    virtual void BeginPlay() override;
 
-public:	
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Handball")
+    TObjectPtr<USceneComponent> SceneRoot;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Handball")
+    TObjectPtr<UStaticMeshComponent> BallMesh;
+    
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Handball")
+    TObjectPtr<UHandballSimulationComponent> SimulationComponent;
+    
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Handball")
+    FHandballState BallState;
 };

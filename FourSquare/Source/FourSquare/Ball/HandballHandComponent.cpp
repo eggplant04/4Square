@@ -1,34 +1,45 @@
-// Fill out your copyright notice in the Description page of Project Settings.
 
+#include "HandballHandComponent.h"
+#include "Handball.h"
+#include "HandballSimulationComponent.h"
 
-#include "FourSquare/Ball/HandballHandComponent.h"
+#include "EngineUtils.h"
 
-// Sets default values for this component's properties
 UHandballHandComponent::UHandballHandComponent()
 {
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
-	PrimaryComponentTick.bCanEverTick = true;
+    PrimaryComponentTick.bCanEverTick = false;
 
-	// ...
+    InitBoxExtent(FVector(1.25f, 4.5f, 5.5f));
+
+    SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    SetCollisionResponseToAllChannels(ECR_Ignore);
+    SetGenerateOverlapEvents(false);
+    SetSimulatePhysics(false);
 }
 
-
-// Called when the game starts
 void UHandballHandComponent::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 
-	// ...
-	
+    for (TActorIterator<AHandball> It(GetWorld()); It; ++It)
+    {
+        if (UHandballSimulationComponent* Sim = It->GetSimulationComponent())
+        {
+            Sim->RegisterHand(this);
+        }
+    }
 }
 
-
-// Called every frame
-void UHandballHandComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+void UHandballHandComponent::EndPlay(
+    const EEndPlayReason::Type EndPlayReason)
 {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    for (TActorIterator<AHandball> It(GetWorld()); It; ++It)
+    {
+        if (UHandballSimulationComponent* Sim = It->GetSimulationComponent())
+        {
+            Sim->UnregisterHand(this);
+        }
+    }
 
-	// ...
+    Super::EndPlay(EndPlayReason);
 }
-
