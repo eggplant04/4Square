@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -6,7 +7,7 @@
 #include "Handball.generated.h"
 
 class USceneComponent;
-class UStaticMeshComponent; 
+class UStaticMeshComponent;
 class UHandballSimulationComponent;
 class UMaterialInstanceDynamic;
 
@@ -17,7 +18,11 @@ class FOURSQUARE_API AHandball : public AActor
 
 public:
     AHandball();
-    
+
+    virtual void GetLifetimeReplicatedProps(
+        TArray<FLifetimeProperty>& OutLifetimeProps
+    ) const override;
+
     UHandballSimulationComponent* GetSimulationComponent() const
     {
         return SimulationComponent;
@@ -38,15 +43,20 @@ protected:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Handball")
     TObjectPtr<UStaticMeshComponent> BallMesh;
-    
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Handball")
     TObjectPtr<UHandballSimulationComponent> SimulationComponent;
-    
-    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Handball")
+
+    UPROPERTY(ReplicatedUsing = OnRep_BallState,
+        VisibleInstanceOnly, BlueprintReadOnly, Category = "Handball")
     FHandballState BallState;
 
     UPROPERTY(Transient)
     TObjectPtr<UMaterialInstanceDynamic> SpeedMaterial;
 
+    UFUNCTION()
+    void OnRep_BallState();
+
+    void ApplyBallState();
     void UpdateSpeedMaterial();
 };
