@@ -15,6 +15,7 @@ struct FHandballHandMotion
     FTransform Start;
     FTransform End;
     FVector Extent = FVector::ZeroVector;
+    int32 TrackedHandIndex = INDEX_NONE;
 };
 
 UCLASS(ClassGroup = (Handball), meta = (BlueprintSpawnableComponent))
@@ -28,11 +29,14 @@ public:
     void RegisterHand(UHandballHandComponent* Hand);
     void UnregisterHand(UHandballHandComponent* Hand);
 
+    bool TryGrabBall(UHandballHandComponent* Hand);
+    void ReleaseBall(UHandballHandComponent* Hand);
+
     void SimulateStep(
         FHandballState& State,
         float DeltaTime,
         const TArray<FHandballHandMotion>& HandMotions
-    ) const;
+    );
     
     float GetMaxBallSpeed() const
     {
@@ -67,6 +71,27 @@ protected:
         Category = "Handball|Hands", meta = (ClampMin = "0.0"))
     float HandHitStrength = 1.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Hands",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float HandDirectionInfluence = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Hands", meta = (ClampMin = "0.0"))
+    float GrabReach = 5.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Hands", meta = (ClampMin = "0.0"))
+    float ThrowStrength = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Hands", meta = (ClampMin = "0.0"))
+    float HandHitCooldown = 0.15f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Hands", meta = (ClampMin = "0.0"))
+    float HandRearmDistance = 1.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Handball|Collision",
         meta = (ClampMin = "0.1"))
     float BallRadius = 3.0f;
@@ -84,6 +109,10 @@ private:
         FTransform LastRenderPose;
         FTransform LastSimPose;
         FTransform CurrentPose;
+        float CooldownRemaining = 0.0f;
+        bool bNeedsSeparation = false;
+
+        FVector ThrowVelocity = FVector::ZeroVector;
     };
 
     struct FHandHit
@@ -95,6 +124,9 @@ private:
     };
 
     TArray<FTrackedHand> TrackedHands;
+
+    TWeakObjectPtr<UHandballHandComponent> HoldingHand;
+    FVector HeldLocalOffset = FVector::ZeroVector;
 
     void ClampBallSpeed(FHandballState& State) const;
 
@@ -116,6 +148,12 @@ private:
         FHandballState& State,
         const FVector& Normal,
         const FVector& SurfaceVelocity
+    ) const;
+
+    void ResolveHandBounce(
+        FHandballState& State,
+        const FVector& Normal,
+        const FVector& HandVelocity
     ) const;
 
     float AccumulatedTime = 0.0f;

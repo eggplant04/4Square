@@ -12,6 +12,12 @@ class FOURSQUARE_API UHandballHandComponent : public UBoxComponent
 public:
     UHandballHandComponent();
 
+    UFUNCTION(BlueprintCallable, Category = "Handball|Grab")
+    bool TryGrabBall();
+
+    UFUNCTION(BlueprintCallable, Category = "Handball|Grab")
+    void ReleaseBall();
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

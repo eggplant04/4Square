@@ -17,6 +17,43 @@ UHandballHandComponent::UHandballHandComponent()
     SetSimulatePhysics(false);
 }
 
+bool UHandballHandComponent::TryGrabBall()
+{
+    if (!GetWorld())
+    {
+        return false;
+    }
+
+    for (TActorIterator<AHandball> It(GetWorld()); It; ++It)
+    {
+        if (UHandballSimulationComponent* Sim = It->GetSimulationComponent())
+        {
+            if (Sim->TryGrabBall(this))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+void UHandballHandComponent::ReleaseBall()
+{
+    if (!GetWorld())
+    {
+        return;
+    }
+
+    for (TActorIterator<AHandball> It(GetWorld()); It; ++It)
+    {
+        if (UHandballSimulationComponent* Sim = It->GetSimulationComponent())
+        {
+            Sim->ReleaseBall(this);
+        }
+    }
+}
+
 void UHandballHandComponent::BeginPlay()
 {
     Super::BeginPlay();
