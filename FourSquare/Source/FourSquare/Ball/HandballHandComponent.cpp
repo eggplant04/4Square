@@ -1,6 +1,7 @@
 
 #include "HandballHandComponent.h"
 #include "Handball.h"
+#include "MotionControllerComponent.h"
 #include "HandballSimulationComponent.h"
 
 #include "EngineUtils.h"
@@ -52,6 +53,24 @@ void UHandballHandComponent::ReleaseBall()
             Sim->ReleaseBall(this);
         }
     }
+}
+
+bool UHandballHandComponent::HasValidTracking() const
+{
+    // Search the attachment hierarchy for our VR controller.
+    for (const USceneComponent* Parent = GetAttachParent();
+        Parent;
+        Parent = Parent->GetAttachParent())
+    {
+        if (const UMotionControllerComponent* Controller =
+            Cast<UMotionControllerComponent>(Parent))
+        {
+            return Controller->IsTracked();
+        }
+    }
+
+    // Allow manually positioned hands for non-VR testing.
+    return true;
 }
 
 void UHandballHandComponent::BeginPlay()

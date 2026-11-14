@@ -17,6 +17,8 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Handball|Grab")
     void ReleaseBall();
+    
+    bool HasValidTracking() const;
 
 protected:
     virtual void BeginPlay() override;

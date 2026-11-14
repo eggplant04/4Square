@@ -132,11 +132,22 @@ void UHandballSimulationComponent::RegisterHand(
 
     FTrackedHand NewHand;
     NewHand.Hand = Hand;
+
     NewHand.LastRenderPose = Hand->GetComponentTransform();
     NewHand.LastSimPose = NewHand.LastRenderPose;
     NewHand.CurrentPose = NewHand.LastRenderPose;
 
-    TrackedHands.Add(NewHand);
+    NewHand.PoseHistory.Reserve(32);
+
+    FHandPoseSample InitialSample;
+    InitialSample.TimeSeconds = GetWorld()->GetTimeSeconds();
+    InitialSample.Pose = NewHand.CurrentPose;
+    InitialSample.bValid = Hand->HasValidTracking();
+
+    NewHand.bMotionValid = InitialSample.bValid;
+    NewHand.PoseHistory.Add(InitialSample);
+
+    TrackedHands.Add(MoveTemp(NewHand));
 }
 
 void UHandballSimulationComponent::UnregisterHand(
@@ -168,6 +179,13 @@ bool UHandballSimulationComponent::TryGrabBall(
     AHandball* Ball = Cast<AHandball>(GetOwner());
 
     if (!Ball)
+    {
+        return false;
+    }
+    
+    if (!IsValid(Hand) ||
+        !Hand->HasValidTracking() ||
+        HoldingHand.IsValid())
     {
         return false;
     }
@@ -223,10 +241,37 @@ bool UHandballSimulationComponent::TryGrabBall(
     return true;
 }
 
+
 void UHandballSimulationComponent::ReleaseBall(
     UHandballHandComponent* Hand)
 {
     if (!IsValid(Hand) || HoldingHand.Get() != Hand)
+    {
+        return;
+    }
+
+    FTrackedHand* TrackedHand = nullptr;
+
+    for (FTrackedHand& Tracked : TrackedHands)
+    {
+        if (Tracked.Hand.Get() == Hand)
+        {
+            TrackedHand = &Tracked;
+            break;
+        }
+    }
+
+    // Capture the release pose if a new timestamp is available.
+    if (TrackedHand && GetWorld())
+    {
+        CaptureHandPose(
+            *TrackedHand,
+            GetWorld()->GetTimeSeconds()
+        );
+    }
+
+    // Capturing may have detected tracking loss.
+    if (HoldingHand.Get() != Hand)
     {
         return;
     }
@@ -236,25 +281,29 @@ void UHandballSimulationComponent::ReleaseBall(
     if (Ball)
     {
         FHandballState State = Ball->GetBallState();
-
-        State.Position =
-            Hand->GetComponentTransform().TransformPositionNoScale(
-                HeldLocalOffset
-            );
-
         State.Velocity = FVector::ZeroVector;
 
-        for (FTrackedHand& Tracked : TrackedHands)
+        if (TrackedHand)
         {
-            if (Tracked.Hand.Get() == Hand)
+            if (TrackedHand->bMotionValid &&
+                Hand->HasValidTracking() &&
+                !TrackedHand->PoseHistory.IsEmpty())
             {
-                State.Velocity =
-                    Tracked.ThrowVelocity * ThrowStrength;
+                const FTransform& ReleasePose =
+                    TrackedHand->PoseHistory.Last().Pose;
 
-                Tracked.CooldownRemaining = HandHitCooldown;
-                Tracked.bNeedsSeparation = true;
-                break;
+                State.Position =
+                    ReleasePose.TransformPositionNoScale(
+                        HeldLocalOffset
+                    );
+
+                State.Velocity =
+                    CalculateThrowVelocity(*TrackedHand) *
+                    ThrowStrength;
             }
+
+            TrackedHand->CooldownRemaining = HandHitCooldown;
+            TrackedHand->bNeedsSeparation = true;
         }
 
         ClampBallSpeed(State);
@@ -265,6 +314,8 @@ void UHandballSimulationComponent::ReleaseBall(
     HeldLocalOffset = FVector::ZeroVector;
     AccumulatedTime = 0.0f;
 }
+
+
 
 void UHandballSimulationComponent::TickComponent(
     float DeltaTime,
@@ -286,43 +337,17 @@ void UHandballSimulationComponent::TickComponent(
             return !Entry.Hand.IsValid();
         });
 
-    // Sample hand motion.
+    const double FrameTime = GetWorld()->GetTimeSeconds();
+
+    // Record one timestamped pose per hand.
     for (FTrackedHand& Hand : TrackedHands)
     {
-        Hand.CurrentPose = Hand.Hand->GetComponentTransform();
-
-        if (HoldingHand.Get() == Hand.Hand.Get())
-        {
-            // Measure velocity at the actual held ball position.
-            // This includes wrist rotation.
-            const FVector PreviousPoint =
-                Hand.LastRenderPose.TransformPositionNoScale(
-                    HeldLocalOffset
-                );
-
-            const FVector CurrentPoint =
-                Hand.CurrentPose.TransformPositionNoScale(
-                    HeldLocalOffset
-                );
-
-            const FVector InstantVelocity =
-                (CurrentPoint - PreviousPoint) / DeltaTime;
-
-            // Smooth noisy controller velocity samples.
-            const float Alpha =
-                1.0f - FMath::Exp(-20.0f * DeltaTime);
-
-            Hand.ThrowVelocity = FMath::Lerp(
-                Hand.ThrowVelocity,
-                InstantVelocity,
-                Alpha
-            );
-        }
+        CaptureHandPose(Hand, FrameTime);
     }
 
     if (HoldingHand.IsValid())
     {
-        // Held ball follows the hand instead of simulating physics.
+        // While grabbed, follow the hand without running physics.
         FHandballState State = Ball->GetBallState();
 
         State.Position =
@@ -334,16 +359,9 @@ void UHandballSimulationComponent::TickComponent(
         Ball->SetBallState(State);
 
         AccumulatedTime = 0.0f;
-
-        for (FTrackedHand& Hand : TrackedHands)
-        {
-            Hand.LastSimPose = Hand.CurrentPose;
-        }
     }
     else
     {
-        const float PreviousAccumulatedTime = AccumulatedTime;
-
         AccumulatedTime = FMath::Min(
             AccumulatedTime + DeltaTime,
             FixedTimeStep * MaxStepsPerFrame
@@ -359,35 +377,46 @@ void UHandballSimulationComponent::TickComponent(
         while (AccumulatedTime >= FixedTimeStep &&
             Steps < MaxStepsPerFrame)
         {
-            const float StepEndTime =
-                FixedTimeStep - PreviousAccumulatedTime +
-                Steps * FixedTimeStep;
+            // Absolute world times for this physics step.
+            const double StepStartTime =
+                FrameTime - AccumulatedTime;
 
-            const float Alpha = FMath::Clamp(
-                StepEndTime / DeltaTime, 0.0f, 1.0f
-            );
+            const double StepEndTime =
+                StepStartTime + FixedTimeStep;
 
             Motions.Reset();
 
-            for (int32 Index = 0; Index < TrackedHands.Num(); ++Index)
+            for (int32 Index = 0;
+                Index < TrackedHands.Num();
+                ++Index)
             {
                 FTrackedHand& Hand = TrackedHands[Index];
 
-                const FTransform EndPose = InterpolatePose(
-                    Hand.LastRenderPose,
-                    Hand.CurrentPose,
-                    Alpha
-                );
+                if (!Hand.bMotionValid)
+                {
+                    continue;
+                }
+
+                FTransform StartPose;
+                FTransform EndPose;
+
+                if (!GetHandPoseAtTime(
+                    Hand, StepStartTime, StartPose) ||
+                    !GetHandPoseAtTime(
+                        Hand, StepEndTime, EndPose))
+                {
+                    continue;
+                }
 
                 FHandballHandMotion Motion;
-                Motion.Start = Hand.LastSimPose;
+                Motion.Start = StartPose;
                 Motion.End = EndPose;
-                Motion.Extent = Hand.Hand->GetScaledBoxExtent();
+                Motion.Extent =
+                    Hand.Hand->GetScaledBoxExtent();
+
                 Motion.TrackedHandIndex = Index;
 
                 Motions.Add(Motion);
-
-                Hand.LastSimPose = EndPose;
             }
 
             SimulateStep(State, FixedTimeStep, Motions);
@@ -400,11 +429,6 @@ void UHandballSimulationComponent::TickComponent(
         {
             Ball->SetBallState(State);
         }
-    }
-
-    for (FTrackedHand& Hand : TrackedHands)
-    {
-        Hand.LastRenderPose = Hand.CurrentPose;
     }
 
     if (bDebugRadius)
@@ -421,6 +445,204 @@ void UHandballSimulationComponent::TickComponent(
             1.5f
         );
     }
+}
+
+void UHandballSimulationComponent::CaptureHandPose(
+    FTrackedHand& Hand,
+    double TimeSeconds)
+{
+    if (!Hand.Hand.IsValid())
+    {
+        return;
+    }
+
+    const FTransform NewPose =
+        Hand.Hand->GetComponentTransform();
+
+    bool bValid = Hand.Hand->HasValidTracking();
+
+    if (!Hand.PoseHistory.IsEmpty())
+    {
+        const FHandPoseSample& Previous =
+            Hand.PoseHistory.Last();
+
+        const double Delta = TimeSeconds - Previous.TimeSeconds;
+
+        // Do not invent movement when time hasn't advanced.
+        if (Delta <= 0.00001)
+        {
+            return;
+        }
+
+        if (Delta > MaxHandSampleDelta)
+        {
+            bValid = false;
+        }
+        else if (bValid)
+        {
+            const double LinearSpeed =
+                FVector::Distance(
+                    Previous.Pose.GetLocation(),
+                    NewPose.GetLocation()
+                ) / Delta;
+
+            const double AngularSpeed =
+                FMath::RadiansToDegrees(
+                    Previous.Pose.GetRotation().AngularDistance(
+                        NewPose.GetRotation()
+                    )
+                ) / Delta;
+
+            if (LinearSpeed > MaxHandTrackingSpeed ||
+                AngularSpeed > MaxHandAngularSpeed)
+            {
+                bValid = false;
+            }
+        }
+    }
+
+    FHandPoseSample Sample;
+    Sample.TimeSeconds = TimeSeconds;
+    Sample.Pose = NewPose;
+    Sample.bValid = bValid;
+
+    Hand.PoseHistory.Add(Sample);
+    Hand.CurrentPose = NewPose;
+    Hand.bMotionValid = bValid;
+
+    // Keep a short bounded history.
+    const double OldestAllowed =
+        TimeSeconds - HandPoseHistorySeconds;
+
+    while (Hand.PoseHistory.Num() > 2 &&
+        Hand.PoseHistory[1].TimeSeconds < OldestAllowed)
+    {
+        Hand.PoseHistory.RemoveAt(0);
+    }
+
+    if (!bValid)
+    {
+        Hand.bNeedsSeparation = true;
+        Hand.CooldownRemaining = HandHitCooldown;
+
+        // Tracking failure must never become a throw.
+        Hand.ThrowVelocity = FVector::ZeroVector;
+
+        if (HoldingHand.Get() == Hand.Hand.Get())
+        {
+            HoldingHand.Reset();
+            HeldLocalOffset = FVector::ZeroVector;
+            AccumulatedTime = 0.0f;
+        }
+    }
+}
+
+bool UHandballSimulationComponent::GetHandPoseAtTime(
+    const FTrackedHand& Hand,
+    double TimeSeconds,
+    FTransform& OutPose) const
+{
+    const TArray<FHandPoseSample>& History = Hand.PoseHistory;
+
+    if (History.IsEmpty())
+    {
+        return false;
+    }
+
+    constexpr double TimeTolerance = 0.00001;
+
+    if (TimeSeconds < History[0].TimeSeconds - TimeTolerance ||
+        TimeSeconds > History.Last().TimeSeconds + TimeTolerance)
+    {
+        return false;
+    }
+
+    // Exact recorded sample.
+    for (const FHandPoseSample& Sample : History)
+    {
+        if (FMath::Abs(Sample.TimeSeconds - TimeSeconds)
+            <= TimeTolerance)
+        {
+            if (!Sample.bValid)
+            {
+                return false;
+            }
+
+            OutPose = Sample.Pose;
+            return true;
+        }
+    }
+
+    // Find the two samples surrounding the requested time.
+    for (int32 i = 1; i < History.Num(); ++i)
+    {
+        const FHandPoseSample& A = History[i - 1];
+        const FHandPoseSample& B = History[i];
+
+        if (TimeSeconds < A.TimeSeconds ||
+            TimeSeconds > B.TimeSeconds)
+        {
+            continue;
+        }
+
+        const double Duration = B.TimeSeconds - A.TimeSeconds;
+
+        if (!A.bValid || !B.bValid ||
+            Duration <= 0.0 ||
+            Duration > MaxHandSampleDelta)
+        {
+            return false;
+        }
+
+        const float Alpha = static_cast<float>(
+            (TimeSeconds - A.TimeSeconds) / Duration
+            );
+
+        OutPose = InterpolatePose(
+            A.Pose,
+            B.Pose,
+            Alpha
+        );
+
+        return true;
+    }
+
+    return false;
+}
+
+FVector UHandballSimulationComponent::CalculateThrowVelocity(
+    const FTrackedHand& Hand) const
+{
+    if (Hand.PoseHistory.IsEmpty())
+    {
+        return FVector::ZeroVector;
+    }
+
+    const double EndTime =
+        Hand.PoseHistory.Last().TimeSeconds;
+
+    const double StartTime =
+        EndTime - ThrowVelocityWindow;
+
+    FTransform StartPose;
+    FTransform EndPose;
+
+    if (!GetHandPoseAtTime(Hand, StartTime, StartPose) ||
+        !GetHandPoseAtTime(Hand, EndTime, EndPose))
+    {
+        return FVector::ZeroVector;
+    }
+
+    // Measure the actual held ball's movement,
+    // including movement caused by wrist rotation.
+    const FVector StartPosition =
+        StartPose.TransformPositionNoScale(HeldLocalOffset);
+
+    const FVector EndPosition =
+        EndPose.TransformPositionNoScale(HeldLocalOffset);
+
+    return (EndPosition - StartPosition) /
+        (EndTime - StartTime);
 }
 
 void UHandballSimulationComponent::ClampBallSpeed(

@@ -18,6 +18,13 @@ struct FHandballHandMotion
     int32 TrackedHandIndex = INDEX_NONE;
 };
 
+struct FHandPoseSample
+{
+    double TimeSeconds = 0.0;
+    FTransform Pose = FTransform::Identity;
+    bool bValid = false;
+};
+
 UCLASS(ClassGroup = (Handball), meta = (BlueprintSpawnableComponent))
 class FOURSQUARE_API UHandballSimulationComponent : public UActorComponent
 {
@@ -92,6 +99,28 @@ protected:
         Category = "Handball|Hands", meta = (ClampMin = "0.0"))
     float HandRearmDistance = 1.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Tracking", meta = (ClampMin = "0.0"))
+    float MaxHandTrackingSpeed = 1500.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Tracking", meta = (ClampMin = "0.0"))
+    float MaxHandAngularSpeed = 1800.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Tracking", meta = (ClampMin = "0.001"))
+    float MaxHandSampleDelta = 0.1f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Tracking",
+        meta = (ClampMin = "0.05"))
+    float HandPoseHistorySeconds = 0.2f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Handball|Tracking",
+        meta = (ClampMin = "0.01"))
+    float ThrowVelocityWindow = 0.05f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Handball|Collision",
         meta = (ClampMin = "0.1"))
     float BallRadius = 3.0f;
@@ -113,6 +142,8 @@ private:
         bool bNeedsSeparation = false;
 
         FVector ThrowVelocity = FVector::ZeroVector;
+        bool bMotionValid = false;
+        TArray<FHandPoseSample> PoseHistory;
     };
 
     struct FHandHit
@@ -127,6 +158,21 @@ private:
 
     TWeakObjectPtr<UHandballHandComponent> HoldingHand;
     FVector HeldLocalOffset = FVector::ZeroVector;
+
+    void CaptureHandPose(
+        FTrackedHand& Hand,
+        double TimeSeconds
+    );
+
+    bool GetHandPoseAtTime(
+        const FTrackedHand& Hand,
+        double TimeSeconds,
+        FTransform& OutPose
+    ) const;
+
+    FVector CalculateThrowVelocity(
+        const FTrackedHand& Hand
+    ) const;
 
     void ClampBallSpeed(FHandballState& State) const;
 
